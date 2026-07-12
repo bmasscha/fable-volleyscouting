@@ -1,0 +1,66 @@
+{
+ "name": "Demo Away",
+ "color": "#c62828",
+ "players": [
+  {
+   "id": "3eac6dd307f4401ca5913b79abf0a8e0",
+   "number": 1,
+   "name": "Jara Lambrechts",
+   "role": "setter"
+  },
+  {
+   "id": "1d736de0aead417c8d07673a5d1ddfe6",
+   "number": 2,
+   "name": "Kaat Vermeulen",
+   "role": "outside"
+  },
+  {
+   "id": "961e2e8c16194e028c198e08dd4d7bea",
+   "number": 3,
+   "name": "Lena Goossens",
+   "role": "middle"
+  },
+  {
+   "id": "89aaf36089d54dcf87fb082c68c5ae0a",
+   "number": 4,
+   "name": "Mira Hendrickx",
+   "role": "opposite"
+  },
+  {
+   "id": "3fc686bfc7cd407d9d04062e3b002bd8",
+   "number": 5,
+   "name": "Noor Willems",
+   "role": "outside"
+  },
+  {
+   "id": "29f0389e8bbf4d178c6155987834d924",
+   "number": 6,
+   "name": "Odile Segers",
+   "role": "middle"
+  },
+  {
+   "id": "7cb2b72439d24d67826b8bca0464dc76",
+   "number": 9,
+   "name": "Pia Van Damme",
+   "role": "libero"
+  },
+  {
+   "id": "01e602d55330453c86e4f42d3fdc3ce1",
+   "number": 10,
+   "name": "Rune Michiels",
+   "role": "universal"
+  },
+  {
+   "id": "71096f0db531402e9cd2296c9d3a3ab1",
+   "number": 11,
+   "name": "Saar Coppens",
+   "role": "outside"
+  },
+  {
+   "id": "cead98a0df1c4ac8a4b02000050ad69a",
+   "number": 12,
+   "name": "Tess De Smedt",
+   "role": "universal"
+  }
+ ]
+}

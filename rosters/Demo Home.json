@@ -1,0 +1,60 @@
+{
+ "name": "Demo Home",
+ "color": "#1565c0",
+ "players": [
+  {
+   "id": "0e8be859171041b8843b73ceb8fce4f2",
+   "number": 1,
+   "name": "Anna Peeters",
+   "role": "setter"
+  },
+  {
+   "id": "4ef469eccef74acd957cffbef912cacf",
+   "number": 2,
+   "name": "Bo Janssens",
+   "role": "outside"
+  },
+  {
+   "id": "9ca5cdbae0064a0da7553967b43f97b5",
+   "number": 3,
+   "name": "Cato De Vos",
+   "role": "middle"
+  },
+  {
+   "id": "601720701e8249f5be1d09e51edcbbe6",
+   "number": 4,
+   "name": "Dina Maes",
+   "role": "opposite"
+  },
+  {
+   "id": "d946e20b83cc450bac8c391d26cd9426",
+   "number": 5,
+   "name": "Elke Claes",
+   "role": "outside"
+  },
+  {
+   "id": "de219028603c4eabb31442a2967197ae",
+   "number": 6,
+   "name": "Fien Wouters",
+   "role": "middle"
+  },
+  {
+   "id": "b952609b0f7e4efc94d0b7fb4a5a55b9",
+   "number": 7,
+   "name": "Griet Smet",
+   "role": "libero"
+  },
+  {
+   "id": "dc1ce057292b4cfc8c652b2b28fbd2d3",
+   "number": 8,
+   "name": "Hanne Dierckx",
+   "role": "universal"
+  },
+  {
+   "id": "89665b579a7d42cb94cace55221ab960",
+   "number": 9,
+   "name": "Ines Verlinden",
+   "role": "setter"
+  }
+ ]
+}

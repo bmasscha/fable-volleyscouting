@@ -1,0 +1,183 @@
+"""Horizontal volleyball court with free zone, player tokens and
+trajectory input.
+
+Interaction model (mouse and touch behave the same):
+- press-drag-release across a meaningful distance -> trajectory_drawn
+- short tap on a player token -> player_tapped
+- short tap elsewhere -> court_tapped
+
+Scene coordinates are court metres * M pixels; net at x = 0,
+court y in [0, 9] (see core/rotation.py).
+"""
+from __future__ import annotations
+
+from PyQt6.QtCore import QLineF, QPointF, QRectF, Qt, pyqtSignal
+from PyQt6.QtGui import (QBrush, QColor, QPainter, QPainterPath, QPen,
+                         QPolygonF)
+from PyQt6.QtWidgets import QGraphicsPathItem, QGraphicsScene, QGraphicsView
+
+from core.rotation import (ATTACK_LINE, COURT_HALF_LENGTH, COURT_WIDTH,
+                           FREE_ZONE_X, FREE_ZONE_Y)
+from .player_token import PlayerToken
+
+M = 40.0                       # pixels per metre
+TAP_THRESHOLD_PX = 18.0        # press/release closer than this = tap
+
+FREE_ZONE_COLOR = QColor("#2a6f97")
+COURT_COLOR = QColor("#e8853b")
+FRONT_ZONE_COLOR = QColor("#d9702a")
+LINE_PEN = QPen(QColor("white"), 3)
+NET_PEN = QPen(QColor("#222222"), 7)
+
+SERVE_ARROW = QColor("#ffffff")
+ATTACK_ARROW = QColor("#ffd600")
+
+
+class _Arrow(QGraphicsPathItem):
+    def __init__(self, x1, y1, x2, y2, color: QColor, width: float = 4.0):
+        super().__init__()
+        line = QLineF(QPointF(x1, y1), QPointF(x2, y2))
+        path = QPainterPath(line.p1())
+        path.lineTo(line.p2())
+        # arrowhead
+        head = QLineF(line.p2(), line.p1())
+        head.setLength(min(16.0, line.length()))
+        for angle in (-25, 25):
+            wing = QLineF(head)
+            wing.setAngle(head.angle() + angle)
+            path.moveTo(line.p2())
+            path.lineTo(wing.p2())
+        self.setPath(path)
+        self.setPen(QPen(color, width, Qt.PenStyle.SolidLine,
+                         Qt.PenCapStyle.RoundCap))
+        self.setZValue(5)
+
+
+class CourtView(QGraphicsView):
+    trajectory_drawn = pyqtSignal(float, float, float, float)  # court metres
+    player_tapped = pyqtSignal(str, str)                       # team_key, player_id
+    court_tapped = pyqtSignal(float, float)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._scene = QGraphicsScene(self)
+        self._scene.setSceneRect(
+            -(COURT_HALF_LENGTH + FREE_ZONE_X) * M, -FREE_ZONE_Y * M,
+            2 * (COURT_HALF_LENGTH + FREE_ZONE_X) * M,
+            (COURT_WIDTH + 2 * FREE_ZONE_Y) * M)
+        self.setScene(self._scene)
+        self.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        self.setCacheMode(QGraphicsView.CacheModeFlag.CacheBackground)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setFrameShape(QGraphicsView.Shape.NoFrame)
+        self._tokens: dict[tuple[str, str], PlayerToken] = {}
+        self._arrows: list[_Arrow] = []
+        self._press_scene: QPointF | None = None
+        self._rubber: _Arrow | None = None
+
+    # ------------------------------------------------------------- painting
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self.fitInView(self._scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
+
+    def drawBackground(self, painter: QPainter, rect: QRectF) -> None:
+        painter.fillRect(rect, FREE_ZONE_COLOR)
+        L, W, A = COURT_HALF_LENGTH * M, COURT_WIDTH * M, ATTACK_LINE * M
+        court = QRectF(-L, 0, 2 * L, W)
+        painter.fillRect(court, COURT_COLOR)
+        painter.fillRect(QRectF(-A, 0, 2 * A, W), FRONT_ZONE_COLOR)
+        painter.setPen(LINE_PEN)
+        painter.drawRect(court)
+        painter.drawLine(QPointF(-A, 0), QPointF(-A, W))   # attack lines
+        painter.drawLine(QPointF(A, 0), QPointF(A, W))
+        painter.setPen(NET_PEN)                            # net / centre line
+        painter.drawLine(QPointF(0, -0.6 * M), QPointF(0, W + 0.6 * M))
+        painter.setPen(QPen(QColor("white"), 2, Qt.PenStyle.DashLine))
+        painter.drawLine(QPointF(0, 0), QPointF(0, W))
+
+    # ---------------------------------------------------------------- input
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._press_scene = self.mapToScene(event.position().toPoint())
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        if self._press_scene is not None:
+            cur = self.mapToScene(event.position().toPoint())
+            if (QLineF(self._press_scene, cur).length() > TAP_THRESHOLD_PX):
+                if self._rubber is not None:
+                    self._scene.removeItem(self._rubber)
+                self._rubber = _Arrow(self._press_scene.x(), self._press_scene.y(),
+                                      cur.x(), cur.y(), QColor("#ffffff"), 3.0)
+                self._rubber.setOpacity(0.7)
+                self._scene.addItem(self._rubber)
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        press, self._press_scene = self._press_scene, None
+        if self._rubber is not None:
+            self._scene.removeItem(self._rubber)
+            self._rubber = None
+        if press is None or event.button() != Qt.MouseButton.LeftButton:
+            super().mouseReleaseEvent(event)
+            return
+        release = self.mapToScene(event.position().toPoint())
+        if QLineF(press, release).length() <= TAP_THRESHOLD_PX:
+            token = self._token_at(event.position().toPoint())
+            if token is not None:
+                self.player_tapped.emit(token.team_key, token.player_id)
+            else:
+                self.court_tapped.emit(release.x() / M, release.y() / M)
+        else:
+            self.trajectory_drawn.emit(press.x() / M, press.y() / M,
+                                       release.x() / M, release.y() / M)
+        super().mouseReleaseEvent(event)
+
+    def _token_at(self, view_pos) -> PlayerToken | None:
+        for item in self.items(view_pos):
+            if isinstance(item, PlayerToken):
+                return item
+        return None
+
+    # --------------------------------------------------------------- tokens
+
+    def update_tokens(self, specs: list[dict]) -> None:
+        """specs: dicts with keys team_key, player_id, number, name, color,
+        badge, x, y (court metres), highlight, serving."""
+        wanted = set()
+        for s in specs:
+            key = (s["team_key"], s["player_id"])
+            wanted.add(key)
+            token = self._tokens.get(key)
+            if token is None:
+                token = PlayerToken(*key)
+                self._tokens[key] = token
+                self._scene.addItem(token)
+            token.set_appearance(s["number"], s["name"], s["color"],
+                                 s.get("badge", ""), s.get("highlight", False),
+                                 s.get("serving", False))
+            token.setPos(s["x"] * M, s["y"] * M)
+        for key in list(self._tokens):
+            if key not in wanted:
+                self._scene.removeItem(self._tokens.pop(key))
+
+    # ------------------------------------------------------------ trajectories
+
+    def clear_trajectories(self) -> None:
+        for a in self._arrows:
+            self._scene.removeItem(a)
+        self._arrows.clear()
+
+    def add_trajectory(self, x1: float, y1: float, x2: float, y2: float,
+                       kind: str = "attack") -> None:
+        for a in self._arrows:               # fade older arrows
+            a.setOpacity(max(0.15, a.opacity() * 0.55))
+        color = SERVE_ARROW if kind == "serve" else ATTACK_ARROW
+        arrow = _Arrow(x1 * M, y1 * M, x2 * M, y2 * M, color)
+        self._scene.addItem(arrow)
+        self._arrows.append(arrow)
+        if len(self._arrows) > 5:
+            self._scene.removeItem(self._arrows.pop(0))
