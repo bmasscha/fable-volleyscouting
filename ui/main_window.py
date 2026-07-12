@@ -61,6 +61,7 @@ class MainWindow(QMainWindow):
         self.armed_bench: tuple[str, str] | None = None
         self._transient_warning = ""
         self.formations_enabled = True   # realistic 5-1 positions vs grid
+        self.charts_dialog = None        # non-modal trajectory charts
 
         self._build_ui()
         self._build_shortcuts()
@@ -83,7 +84,8 @@ class MainWindow(QMainWindow):
                            ("Save as", self.save_match_as),
                            ("Next set", self.next_set),
                            ("Adjust", self.open_adjust),
-                           ("Report", self.open_report)):
+                           ("Report", self.open_report),
+                           ("Charts", self.open_charts)):
             act = QAction(text, self)
             act.triggered.connect(slot)
             tb.addAction(act)
@@ -172,6 +174,7 @@ class MainWindow(QMainWindow):
         self.engine.load_events(events)
         self.match_path = Path(path)
         self._clear_pending()
+        self._refresh_charts()
         self.refresh()
 
     def save_match_as(self) -> None:
@@ -194,6 +197,25 @@ class MainWindow(QMainWindow):
     def open_adjust(self) -> None:
         if self.engine:
             AdjustDialog(self).exec()
+
+    def open_charts(self) -> None:
+        """Non-modal serve / attack trajectory charts; stays open and
+        refreshes live while scouting continues."""
+        if self.charts_dialog is None:
+            from .trajectory_view import TrajectoryDialog
+            self.charts_dialog = TrajectoryDialog(self._charts_data, self)
+        self.charts_dialog.refresh_data()
+        self.charts_dialog.show()
+        self.charts_dialog.raise_()
+
+    def _charts_data(self):
+        if not self.engine:
+            return None
+        return self.config, self.teams, self.engine.events
+
+    def _refresh_charts(self) -> None:
+        if self.charts_dialog is not None and self.charts_dialog.isVisible():
+            self.charts_dialog.refresh_data()
 
     # ------------------------------------------------------ rally gestures
 
@@ -365,6 +387,7 @@ class MainWindow(QMainWindow):
         if removed is not None:
             self._hint(f"undid: {removed.TYPE}")
         self._autosave()
+        self._refresh_charts()
         self.refresh()
 
     # ------------------------------------------------------------ plumbing
@@ -377,6 +400,7 @@ class MainWindow(QMainWindow):
         if warnings:
             self._hint("⚠ " + "; ".join(warnings))
         self._autosave()
+        self._refresh_charts()
         self.refresh()
         if self.engine.state.phase == Phase.SET_OVER:
             QTimer.singleShot(50, self._set_over_dialog)

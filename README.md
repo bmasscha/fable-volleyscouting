@@ -50,6 +50,14 @@ Toolbar → *Report*: per-player serve / reception / attack / dig counts,
 efficiency and points, plus the team points breakdown. Export as CSV or
 printable HTML.
 
+Toolbar → *Charts*: visual serve and attack trajectory charts, filterable
+per team / player / set — green = ace or kill, red = fault, white = ball
+stayed in play. All lines are drawn playing left → right regardless of
+which side the team actually occupied (side switches are normalized away),
+so a player's serving pattern reads as one picture. The window is
+non-modal: leave it open next to the court and it updates after every
+rally (and after undo) while you keep scouting.
+
 ## Files
 
 - Matches autosave after every rally to `matches\` (JSON; crash-safe,
