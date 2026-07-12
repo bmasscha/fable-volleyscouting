@@ -28,6 +28,16 @@ Libero exchanges work the same (not counted as subs); the app prompts when
 the libero must leave (front row / serving rotation). Setter tokens are
 blue, libero red.
 
+**Formations:** tokens stand where a real 5-1 team stands, not on a
+rotational grid — serve receive (both outside hitters + libero passing,
+setter hiding legally per rotation, middle at the net), then attack
+positions after the reception (OH → 4/6, MB → 3, libero → 5,
+setter/opposite → 2/1, back-row setter penetrating), block + perimeter
+on defence. All six receive charts satisfy the FIVB overlap rules.
+Teams without an identifiable setter (or with the toolbar *Formations*
+toggle off) fall back to the rotational grid; a 6-2 is handled by
+treating the back-row setter as the acting setter.
+
 Scores, side-out rotation (clockwise when a team wins serve back), set ends
 (25 pts / 2-point lead; deciding set to 15 with the side switch at 8) and
 the automatic side switch between sets are all handled by the engine.

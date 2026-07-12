@@ -27,12 +27,13 @@ from PyQt6.QtWidgets import (QButtonGroup, QComboBox, QDialog,
 
 from core import persistence, rotation
 from core.engine import MatchEngine, Phase
+from core.formations import Mode, acting_setter_slot, formation_xy
 from core.events import (AttackEvent, DigEvent, LiberoSwapEvent,
                          ManualScoreEvent, RallyPointEvent, ReceptionEvent,
                          ServeEvent, ServeOverrideEvent, SetStartEvent,
                          SubstitutionEvent, TimeoutEvent)
 from core.models import AWAY, HOME, MatchConfig, Rating, Role, Team, other
-from core.rotation import LEFT, RIGHT, position_xy, serve_xy
+from core.rotation import LEFT, RIGHT, serve_xy
 
 from .bench_panel import BenchPanel
 from .court_view import CourtView
@@ -59,6 +60,7 @@ class MainWindow(QMainWindow):
         self.pending_attack: tuple[str, str, tuple] | None = None
         self.armed_bench: tuple[str, str] | None = None
         self._transient_warning = ""
+        self.formations_enabled = True   # realistic 5-1 positions vs grid
 
         self._build_ui()
         self._build_shortcuts()
@@ -87,6 +89,13 @@ class MainWindow(QMainWindow):
             tb.addAction(act)
             if text == "Next set":
                 self.next_set_action = act
+        self.formations_action = QAction("Formations", self)
+        self.formations_action.setCheckable(True)
+        self.formations_action.setChecked(True)
+        self.formations_action.setToolTip(
+            "Draw players at realistic 5-1 positions (off = rotation grid)")
+        self.formations_action.toggled.connect(self._on_formations_toggled)
+        tb.addAction(self.formations_action)
 
         central = QWidget()
         root = QVBoxLayout(central)
@@ -408,12 +417,45 @@ class MainWindow(QMainWindow):
             return not (-rotation.COURT_HALF_LENGTH - t <= x2 <= t)
         return not (-t <= x2 <= rotation.COURT_HALF_LENGTH + t)
 
-    def _nearest(self, team_key: str, x: float, y: float) -> str:
+    def _team_mode(self, team_key: str) -> Mode:
+        """Formation situation of a team, from the rally phase."""
         st = self.engine.state
+        if not self.formations_enabled:
+            return Mode.GRID
+        if st.phase == Phase.AWAIT_SERVE:
+            return (Mode.SERVE_BASE if team_key == st.serving_team
+                    else Mode.RECEIVE)
+        if st.phase == Phase.RECEPTION:
+            return (Mode.DEFENSE if team_key == st.serving_team
+                    else Mode.RECEIVE)
+        if st.phase in (Phase.ATTACK, Phase.DEFENSE):
+            return (Mode.OFFENSE if team_key == st.attacking_team
+                    else Mode.DEFENSE)
+        return Mode.GRID
+
+    def _positions(self, team_key: str) -> dict[str, tuple[float, float]]:
+        """Displayed coordinates per on-court player. Used by both the
+        token rendering and the nearest-player auto-selection, so the
+        pick always agrees with what the scouter sees."""
+        st = self.engine.state
+        ts = st.team[team_key]
         side = self.engine.side_of(team_key)
+        roles = {}
+        for idx, pid in enumerate(ts.lineup):
+            p = self.teams[team_key].player(pid)
+            roles[idx] = (Role.LIBERO if pid in ts.liberos
+                          else p.role if p else Role.UNIVERSAL)
+        xy = formation_xy(acting_setter_slot(roles),
+                          self._team_mode(team_key), side)
+        return {pid: xy[idx] for idx, pid in enumerate(ts.lineup)}
+
+    def _on_formations_toggled(self, checked: bool) -> None:
+        self.formations_enabled = checked
+        self.refresh()
+
+    def _nearest(self, team_key: str, x: float, y: float) -> str:
         best, best_d = None, 1e9
-        for idx, pid in enumerate(st.team[team_key].lineup):
-            px, py = position_xy(idx, side)
+        for pid, (px, py) in self._positions(team_key).items():
             d = (px - x) ** 2 + (py - y) ** 2
             if d < best_d:
                 best, best_d = pid, d
@@ -456,12 +498,13 @@ class MainWindow(QMainWindow):
         for tk in (HOME, AWAY):
             ts = st.team[tk]
             side = self.engine.side_of(tk)
+            positions = self._positions(tk)
             for idx, pid in enumerate(ts.lineup):
                 p = self.teams[tk].player(pid)
                 if p is None:
                     continue
                 serving = (tk == st.serving_team and idx == 0)
-                x, y = position_xy(idx, side)
+                x, y = positions[pid]
                 if serving and st.phase == Phase.AWAIT_SERVE:
                     x, y = serve_xy(side)
                 if pid in ts.liberos or p.role == Role.LIBERO:

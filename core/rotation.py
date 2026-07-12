@@ -42,22 +42,23 @@ def rotate_clockwise(lineup: list) -> list:
     return list(lineup[1:]) + [lineup[0]]
 
 
-def position_xy(pos_index: int, side: str) -> tuple[float, float]:
-    """Court coordinates (metres) of position P{pos_index+1} for a team
-    playing on `side` ('left' or 'right')."""
-    x, y = _LEFT_XY[pos_index]
+def to_side(x: float, y: float, side: str) -> tuple[float, float]:
+    """Map a coordinate authored for the LEFT half to the given side.
+    The right half is the 180-degree rotation of the left half."""
     if side == RIGHT:
         return (-x, COURT_WIDTH - y)
     return (x, y)
+
+
+def position_xy(pos_index: int, side: str) -> tuple[float, float]:
+    """Court coordinates (metres) of position P{pos_index+1} for a team
+    playing on `side` ('left' or 'right')."""
+    return to_side(*_LEFT_XY[pos_index], side)
 
 
 def serve_xy(side: str) -> tuple[float, float]:
     """Spot behind the end line where the server stands."""
-    x = -(COURT_HALF_LENGTH + 1.2)
-    y = 7.5
-    if side == RIGHT:
-        return (-x, COURT_WIDTH - y)
-    return (x, y)
+    return to_side(-(COURT_HALF_LENGTH + 1.2), 7.5, side)
 
 
 def is_front_row(pos_index: int) -> bool:
