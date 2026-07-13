@@ -13,8 +13,10 @@ rotates automatically.
 """
 from __future__ import annotations
 
+import dataclasses
 import datetime
 import threading
+import time
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QTimer
@@ -30,8 +32,8 @@ from core.engine import MatchEngine, Phase
 from core.formations import Mode, acting_setter_slot, formation_xy
 from core.events import (AttackEvent, DigEvent, LiberoSwapEvent,
                          ManualScoreEvent, RallyPointEvent, ReceptionEvent,
-                         ServeEvent, ServeOverrideEvent, SetStartEvent,
-                         SubstitutionEvent, TimeoutEvent)
+                         RotationAdjustEvent, ServeEvent, ServeOverrideEvent,
+                         SetStartEvent, SubstitutionEvent, TimeoutEvent)
 from core.models import AWAY, HOME, MatchConfig, Rating, Role, Team, other
 from core.rotation import LEFT, RIGHT, serve_xy
 
@@ -54,6 +56,7 @@ class MainWindow(QMainWindow):
         self.config = MatchConfig()
         self.match_path: Path | None = None
         self._save_lock = threading.Lock()
+        self.event_log: persistence.EventLogWriter | None = None
 
         # UI-level pending state (never authoritative — the engine is)
         self.candidate: tuple[str, str] | None = None       # (team, player_id)
@@ -70,7 +73,7 @@ class MainWindow(QMainWindow):
     # ----------------------------------------------------------------- UI
 
     def _build_ui(self) -> None:
-        self.setStyleSheet("QMainWindow, QWidget { background: #263238; }"
+        self.setStyleSheet("QMainWindow { background: #263238; }"
                            "QToolBar { background:#1c262b; spacing:6px; }"
                            "QToolButton { color:#eee; font-size:15px; padding:8px; }"
                            "QLabel { color:#ddd; }")
@@ -126,6 +129,7 @@ class MainWindow(QMainWindow):
         self.court.court_tapped.connect(self.on_court_tapped)
         self.rating_bar.rating_clicked.connect(self.on_rating)
         self.rating_bar.serve_rating_clicked.connect(self.on_serve_chip)
+        self.rating_bar.overpass_clicked.connect(self.on_overpass)
         self.rating_bar.undo_clicked.connect(self.on_undo)
         self.rating_bar.point_left_clicked.connect(lambda: self.on_point_side(LEFT))
         self.rating_bar.point_right_clicked.connect(lambda: self.on_point_side(RIGHT))
@@ -157,7 +161,38 @@ class MainWindow(QMainWindow):
         safe = lambda s: "".join(c for c in s if c.isalnum() or c in "-_")
         self.match_path = MATCHES_DIR / (
             f"{stamp}_{safe(teams[HOME].name)}_{safe(teams[AWAY].name)}.json")
+        self._open_event_log()
         self._append(start)
+
+    def startup_prompt(self) -> None:
+        """Fresh start: offer to resume the most recent match (also the
+        crash-recovery path) or begin a new one."""
+        if self.engine is not None:
+            return
+        latest = self._latest_match_path()
+        if latest is None:
+            self.new_match()
+            return
+        when = datetime.datetime.fromtimestamp(latest.stat().st_mtime)
+        box = QMessageBox(self)
+        box.setWindowTitle("Fable Scouter")
+        box.setText(f"Resume the last match?\n\n{latest.stem}\n"
+                    f"(last saved {when:%Y-%m-%d %H:%M})")
+        b_res = box.addButton("Resume", QMessageBox.ButtonRole.AcceptRole)
+        b_new = box.addButton("New match", QMessageBox.ButtonRole.ActionRole)
+        box.addButton("Later", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        if box.clickedButton() is b_res:
+            self._load_match_from(latest)
+        elif box.clickedButton() is b_new:
+            self.new_match()
+
+    def _latest_match_path(self) -> Path | None:
+        try:
+            files = list(MATCHES_DIR.glob("*.json"))
+        except OSError:
+            return None
+        return max(files, key=lambda p: p.stat().st_mtime, default=None)
 
     def open_rosters(self) -> None:
         from .roster_dialog import RosterDialog
@@ -166,15 +201,22 @@ class MainWindow(QMainWindow):
     def load_match(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self, "Load match", str(MATCHES_DIR), "Match files (*.json)")
-        if not path:
-            return
-        config, teams, events = persistence.load_match(path)
+        if path:
+            self._load_match_from(Path(path))
+
+    def _load_match_from(self, path: Path) -> None:
+        config, teams, events, recovered = persistence.load_match_with_log(path)
         self.config, self.teams = config, teams
         self.engine = MatchEngine(config, teams)
         self.engine.load_events(events)
-        self.match_path = Path(path)
+        self.match_path = path
+        self._open_event_log()
         self._clear_pending()
+        self._rebuild_arrows()
         self._refresh_charts()
+        if recovered:
+            self._autosave()
+            self._hint(f"recovered {recovered} unsaved event(s) from the live log")
         self.refresh()
 
     def save_match_as(self) -> None:
@@ -187,6 +229,7 @@ class MainWindow(QMainWindow):
             self.match_path = Path(path)
             persistence.save_match(self.match_path, self.config, self.teams,
                                    self.engine.events)
+            self._open_event_log()
 
     def open_report(self) -> None:
         if not self.engine:
@@ -309,6 +352,20 @@ class MainWindow(QMainWindow):
         self.candidate = (defender_team, digger)
         self.refresh()
 
+    def on_overpass(self) -> None:
+        """Reception went straight back over the net: the serving team gets
+        the ball in the attack phase. Logged as a poor reception."""
+        if not self.engine or self.engine.state.phase != Phase.RECEPTION:
+            return
+        recv = other(self.engine.state.serving_team)
+        if not (self.candidate and self.candidate[0] == recv):
+            self._hint("tap the receiving player first")
+            return
+        self._append(ReceptionEvent(recv, self.candidate[1], Rating.POOR,
+                                    overpass=True))
+        self.candidate = None      # opposing attacker comes from the drag
+        self.refresh()
+
     def on_serve_chip(self, rating: Rating) -> None:
         """Re-rate the serve that was just entered with the default '+'."""
         if not self.engine or not self.engine.events:
@@ -385,6 +442,8 @@ class MainWindow(QMainWindow):
         self._clear_pending()
         self._rebuild_arrows()
         if removed is not None:
+            if self.event_log is not None:
+                self.event_log.log_undo()
             self._hint(f"undid: {removed.TYPE}")
         self._autosave()
         self._refresh_charts()
@@ -392,8 +451,25 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------ plumbing
 
+    def _open_event_log(self) -> None:
+        """(Re)create the live .log.jsonl mirroring the current event list."""
+        if self.event_log is not None:
+            self.event_log.close()
+            self.event_log = None
+        if self.engine and self.match_path:
+            try:
+                self.event_log = persistence.EventLogWriter(
+                    persistence.log_path(self.match_path), self.config,
+                    self.teams, self.engine.events)
+            except OSError:
+                self._hint("⚠ could not open the live event log")
+
     def _append(self, event) -> None:
+        if getattr(event, "ts", None) is None:
+            event = dataclasses.replace(event, ts=time.time())
         warnings = self.engine.append(event)
+        if self.event_log is not None:
+            self.event_log.log_event(event)
         if isinstance(event, (RallyPointEvent,)) or self.engine.state.phase \
                 in (Phase.AWAIT_SERVE, Phase.SET_OVER, Phase.MATCH_OVER):
             self._clear_pending(keep_arrows=True)
@@ -599,6 +675,13 @@ class MainWindow(QMainWindow):
     def _refresh_prompt(self, st) -> None:
         chips = False
         chip_rating = None
+        context = "serve"
+        if st.phase == Phase.RECEPTION:
+            context = "reception"
+        elif st.phase == Phase.ATTACK:
+            context = "attack"
+        elif st.phase == Phase.DEFENSE:
+            context = "attack" if self.pending_attack else "dig"
         if st.phase == Phase.AWAIT_SERVE:
             sp = self.teams[st.serving_team].player(
                 self.engine.expected_server() or "")
@@ -629,6 +712,7 @@ class MainWindow(QMainWindow):
         else:
             prompt = ""
         self.rating_bar.set_prompt(prompt)
+        self.rating_bar.set_context(context)
         self.rating_bar.show_serve_chips(chips, chip_rating)
 
     def _cand_txt(self) -> str:
@@ -711,8 +795,21 @@ class LineupDialog(QDialog):
                 self._combos[tk].append(cb)
                 grid.addWidget(cb, row + 1, col + 1)
 
+        grid.addWidget(QLabel("Rotate lineup:"), 7, 0)
+        for col, tk in enumerate((HOME, AWAY)):
+            holder = QWidget()
+            box = QHBoxLayout(holder)
+            box.setContentsMargins(0, 0, 0, 0)
+            for txt, steps in (("⟲", -1), ("⟳", 1)):
+                b = QPushButton(txt)
+                b.setMinimumHeight(38)
+                b.clicked.connect(
+                    lambda _=False, t=tk, s=steps: self._rotate(t, s))
+                box.addWidget(b)
+            grid.addWidget(holder, 7, col + 1)
+
         self._serve_group = QButtonGroup(self)
-        r = 7
+        r = 8
         grid.addWidget(QLabel("First serve:"), r, 0)
         self.rb_serve = {}
         for col, tk in enumerate((HOME, AWAY)):
@@ -736,6 +833,17 @@ class LineupDialog(QDialog):
         bb.accepted.connect(self._validate_accept)
         bb.rejected.connect(self.reject)
         grid.addWidget(bb, r + 2, 0, 1, 3)
+
+    def _rotate(self, tk: str, steps: int) -> None:
+        """Shift the six P1..P6 assignments one rotation (P2 -> P1 etc.)."""
+        combos = self._combos[tk]
+        ids = [cb.currentData() for cb in combos]
+        k = steps % 6
+        ids = ids[k:] + ids[:k]
+        for cb, pid in zip(combos, ids):
+            idx = cb.findData(pid)
+            if idx >= 0:
+                cb.setCurrentIndex(idx)
 
     def _validate_accept(self) -> None:
         for tk in (HOME, AWAY):
@@ -780,18 +888,35 @@ class AdjustDialog(QDialog):
             b.setMinimumHeight(52)
             b.clicked.connect(lambda _=False, t=tk: self._serve(t))
             lay.addWidget(b, 3, col * 2, 1, 2)
+            for j, (txt, steps) in enumerate((("⟲ rotate", -1),
+                                              ("rotate ⟳", 1))):
+                b = QPushButton(txt)
+                b.setMinimumHeight(52)
+                b.setToolTip(f"{name}: shift the lineup one rotation "
+                             "(score and serve unchanged)")
+                b.clicked.connect(
+                    lambda _=False, t=tk, s=steps: self._rotate(t, s))
+                lay.addWidget(b, 4, col * 2 + j)
         close = QPushButton("Close")
         close.setMinimumHeight(46)
         close.clicked.connect(self.accept)
-        lay.addWidget(close, 4, 0, 1, 4)
+        lay.addWidget(close, 5, 0, 1, 4)
         self._sync()
 
     def _sync(self) -> None:
         st = self.main.engine.state
+
+        def p1(tk: str) -> str:
+            lineup = st.team[tk].lineup
+            p = self.main.teams[tk].player(lineup[0]) if lineup else None
+            return f"#{p.number}" if p else "?"
+
         self.info.setText(
             f"{self.main.teams[HOME].name} {st.scores[HOME]} : "
             f"{st.scores[AWAY]} {self.main.teams[AWAY].name}   "
-            f"(serve: {self.main.teams[st.serving_team].name})")
+            f"(serve: {self.main.teams[st.serving_team].name})\n"
+            f"at P1: {self.main.teams[HOME].name} {p1(HOME)} · "
+            f"{self.main.teams[AWAY].name} {p1(AWAY)}")
 
     def _score(self, team: str, delta: int) -> None:
         self.main._append(ManualScoreEvent(team, delta))
@@ -799,4 +924,8 @@ class AdjustDialog(QDialog):
 
     def _serve(self, team: str) -> None:
         self.main._append(ServeOverrideEvent(team))
+        self._sync()
+
+    def _rotate(self, team: str, steps: int) -> None:
+        self.main._append(RotationAdjustEvent(team, steps))
         self._sync()

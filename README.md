@@ -10,7 +10,7 @@ switching per official rules, and per-player statistics reports.
 .venv\Scripts\python.exe main.py
 ```
 
-(First time: `python -m venv .venv` then `.venv\Scripts\pip install -r requirements.txt`)
+(First time: `uv venv` then `uv pip install -r requirements.txt`)
 
 ## Scouting workflow (one screen, tap + drag)
 
@@ -68,6 +68,6 @@ rally (and after undo) while you keep scouting.
 
 - `core\` — pure-Python rules engine (no Qt): event-sourced match log,
   rotation math, rule validation, stats. `tests\` covers it with 256 tests
-  (`.venv\Scripts\python.exe -m pytest tests -q`), including a scripted
+  (`uv run pytest tests -q`), including a scripted
   full 5-set match simulation.
 - `ui\` — PyQt6 widgets: court scene, tokens, rating bar, benches, dialogs.

@@ -8,9 +8,9 @@ import pytest
 from core import persistence
 from core.events import (AttackEvent, DigEvent, LiberoSwapEvent,
                          ManualScoreEvent, RallyPointEvent, ReceptionEvent,
-                         ServeEvent, ServeOverrideEvent, SetStartEvent,
-                         SubstitutionEvent, TimeoutEvent, event_from_dict,
-                         event_to_dict)
+                         RotationAdjustEvent, ServeEvent, ServeOverrideEvent,
+                         SetStartEvent, SubstitutionEvent, TimeoutEvent,
+                         event_from_dict, event_to_dict)
 from core.models import AWAY, HOME, MatchConfig, Player, Rating, Role, Team
 
 
@@ -37,6 +37,9 @@ def all_event_samples(teams):
                    trajectory=(-10.2, 7.5, 4.4, 3.1)),
         ServeEvent(team=HOME, player_id=h[0], rating=Rating.ERROR),
         ReceptionEvent(team=AWAY, player_id=a[4], rating=Rating.PERFECT),
+        ReceptionEvent(team=AWAY, player_id=a[4], rating=Rating.POOR,
+                       overpass=True),
+        RotationAdjustEvent(team=HOME, steps=-1),
         AttackEvent(team=AWAY, player_id=a[1], rating=Rating.POOR,
                     trajectory=(2.0, 1.0, -6.0, 8.0)),
         AttackEvent(team=AWAY, player_id=a[1], rating=Rating.PERFECT),
@@ -101,6 +104,122 @@ class TestMatchRoundTrip:
             encoding="utf-8"))["events"]) == len(events)
         leftovers = [p for p in path.parent.iterdir() if p.suffix == ".tmp"]
         assert leftovers == []
+
+
+class TestTimestamps:
+    def test_ts_defaults_to_none_and_round_trips(self):
+        e = TimeoutEvent(team=HOME)
+        assert e.ts is None
+        stamped = ServeOverrideEvent(team=AWAY, ts=1234.5)
+        d = event_to_dict(stamped)
+        assert d["ts"] == 1234.5
+        assert event_from_dict(d).ts == 1234.5
+
+    def test_old_files_without_ts_still_load(self):
+        d = {"type": "timeout", "team": HOME}          # pre-timestamp format
+        assert event_from_dict(d) == TimeoutEvent(team=HOME)
+
+    def test_ts_survives_match_round_trip(self, tmp_path):
+        teams = make_teams()
+        events = [TimeoutEvent(team=HOME, ts=100.0),
+                  RallyPointEvent(team=AWAY, ts=101.5)]
+        path = tmp_path / "m.json"
+        persistence.save_match(path, MatchConfig(), teams, events)
+        _, _, events2 = persistence.load_match(path)
+        assert [e.ts for e in events2] == [100.0, 101.5]
+
+
+class TestEventLog:
+    def test_writer_reader_round_trip(self, tmp_path):
+        teams = make_teams()
+        config = MatchConfig(points_per_set=21)
+        events = all_event_samples(teams)
+        lp = tmp_path / "m.log.jsonl"
+        w = persistence.EventLogWriter(lp, config, teams, events[:3])
+        for e in events[3:]:
+            w.log_event(e)
+        w.close()
+        config2, teams2, events2 = persistence.read_event_log(lp)
+        assert config2 == config
+        assert events2 == events
+        assert teams2[HOME].name == teams[HOME].name
+
+    def test_undo_records_pop_events(self, tmp_path):
+        teams = make_teams()
+        events = all_event_samples(teams)
+        lp = tmp_path / "m.log.jsonl"
+        w = persistence.EventLogWriter(lp, MatchConfig(), teams)
+        w.log_event(events[0])
+        w.log_event(events[1])
+        w.log_undo()
+        w.log_event(events[2])
+        w.close()
+        _, _, events2 = persistence.read_event_log(lp)
+        assert events2 == [events[0], events[2]]
+
+    def test_truncated_last_line_is_skipped(self, tmp_path):
+        teams = make_teams()
+        events = all_event_samples(teams)
+        lp = tmp_path / "m.log.jsonl"
+        w = persistence.EventLogWriter(lp, MatchConfig(), teams, events[:2])
+        w.close()
+        with open(lp, "a", encoding="utf-8") as f:
+            f.write('{"type": "timeout", "tea')     # power lost mid-write
+        _, _, events2 = persistence.read_event_log(lp)
+        assert events2 == events[:2]
+
+    def test_log_without_header_raises(self, tmp_path):
+        lp = tmp_path / "m.log.jsonl"
+        lp.write_text('{"type": "timeout", "team": "home", "ts": null}\n',
+                      encoding="utf-8")
+        with pytest.raises(ValueError):
+            persistence.read_event_log(lp)
+
+    def test_log_path_naming(self):
+        assert persistence.log_path("x/match.json").name == "match.log.jsonl"
+
+
+class TestLoadWithLogRecovery:
+    def test_log_ahead_of_snapshot_wins(self, tmp_path):
+        """Crash after logging an event but before the autosave finished:
+        the live log has more events than the snapshot and is preferred."""
+        teams = make_teams()
+        config = MatchConfig()
+        events = all_event_samples(teams)
+        path = tmp_path / "m.json"
+        persistence.save_match(path, config, teams, events[:4])
+        w = persistence.EventLogWriter(persistence.log_path(path), config,
+                                       teams, events[:6])
+        w.close()
+        _, _, events2, recovered = persistence.load_match_with_log(path)
+        assert recovered == 2
+        assert events2 == events[:6]
+
+    def test_snapshot_up_to_date_wins(self, tmp_path):
+        """Undo after the last log rewrite: snapshot (shorter or equal) is
+        authoritative, nothing is 'recovered'."""
+        teams = make_teams()
+        config = MatchConfig()
+        events = all_event_samples(teams)
+        path = tmp_path / "m.json"
+        persistence.save_match(path, config, teams, events[:4])
+        w = persistence.EventLogWriter(persistence.log_path(path), config,
+                                       teams, events[:4])
+        w.close()
+        _, _, events2, recovered = persistence.load_match_with_log(path)
+        assert recovered == 0
+        assert events2 == events[:4]
+
+    def test_missing_or_corrupt_log_is_ignored(self, tmp_path):
+        teams = make_teams()
+        events = all_event_samples(teams)
+        path = tmp_path / "m.json"
+        persistence.save_match(path, MatchConfig(), teams, events[:3])
+        _, _, events2, recovered = persistence.load_match_with_log(path)
+        assert (len(events2), recovered) == (3, 0)
+        persistence.log_path(path).write_text("garbage\n", encoding="utf-8")
+        _, _, events2, recovered = persistence.load_match_with_log(path)
+        assert (len(events2), recovered) == (3, 0)
 
 
 class TestRosterLibrary:

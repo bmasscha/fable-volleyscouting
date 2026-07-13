@@ -15,10 +15,21 @@ RATING_STYLE = {
     Rating.PERFECT: ("#2e7d32", "point"),
 }
 
+# Per-phase hint text for the big rating buttons (second line, under the symbol).
+# "serve" matches RATING_STYLE's default hints and is also the fallback for
+# unrecognized contexts.
+CONTEXT_HINTS = {
+    "serve": {Rating.ERROR: "fail", Rating.POOR: "not good", Rating.GOOD: "good", Rating.PERFECT: "point"},
+    "reception": {Rating.ERROR: "fail", Rating.POOR: "poor", Rating.GOOD: "good", Rating.PERFECT: "perfect"},
+    "attack": {Rating.ERROR: "error-out", Rating.POOR: "poor", Rating.GOOD: "good", Rating.PERFECT: "kill"},
+    "dig": {Rating.ERROR: "fail", Rating.POOR: "poor", Rating.GOOD: "good", Rating.PERFECT: "perfect"},
+}
+
 
 class RatingBar(QWidget):
     rating_clicked = pyqtSignal(object)        # Rating
     serve_rating_clicked = pyqtSignal(object)  # Rating (override of last serve)
+    overpass_clicked = pyqtSignal()            # reception went straight back
     undo_clicked = pyqtSignal()
     point_left_clicked = pyqtSignal()
     point_right_clicked = pyqtSignal()
@@ -69,6 +80,8 @@ class RatingBar(QWidget):
         self.point_right.clicked.connect(self.point_right_clicked)
         row.addWidget(self.point_left, 2)
 
+        self._rating_buttons: dict[Rating, QPushButton] = {}
+        self._context = "serve"
         for r in (Rating.ERROR, Rating.POOR, Rating.GOOD, Rating.PERFECT):
             color, hint = RATING_STYLE[r]
             b = QPushButton(f"{r.symbol}\n{hint}")
@@ -80,6 +93,22 @@ class RatingBar(QWidget):
                 "QPushButton:pressed { border: 4px solid #ffd600; }")
             b.clicked.connect(lambda _=False, rr=r: self.rating_clicked.emit(rr))
             row.addWidget(b, 3)
+            self._rating_buttons[r] = b
+
+        self.overpass = QPushButton("↷\noverpass")
+        self.overpass.setMinimumHeight(76)
+        self.overpass.setSizePolicy(QSizePolicy.Policy.Expanding,
+                                    QSizePolicy.Policy.Fixed)
+        self.overpass.setStyleSheet(
+            "QPushButton { font-size:18px; font-weight:bold; color:white;"
+            " background:#5e35b1; border-radius:10px; }"
+            "QPushButton:pressed { border: 4px solid #ffd600; }")
+        self.overpass.setToolTip(
+            "Reception crossed straight back over the net — "
+            "the serving team plays the ball")
+        self.overpass.clicked.connect(self.overpass_clicked)
+        self.overpass.setVisible(False)
+        row.addWidget(self.overpass, 2)
 
         row.addWidget(self.point_right, 2)
 
@@ -102,6 +131,18 @@ class RatingBar(QWidget):
         for r, w in self._chip_widgets.items():
             w.setVisible(visible)
             w.setChecked(current == r)
+
+    def set_context(self, context: str) -> None:
+        """Relabel the four big rating buttons' hint text for the given rally
+        phase ("serve", "reception", "attack", "dig"). Unknown values fall
+        back to "serve". Idempotent and cheap; safe to call on every refresh."""
+        if context == self._context:
+            return
+        hints = CONTEXT_HINTS.get(context, CONTEXT_HINTS["serve"])
+        self._context = context if context in CONTEXT_HINTS else "serve"
+        for r, b in self._rating_buttons.items():
+            b.setText(f"{r.symbol}\n{hints[r]}")
+        self.overpass.setVisible(self._context == "reception")
 
     def set_point_labels(self, left_name: str, right_name: str) -> None:
         self.point_left.setText(f"◀ point\n{left_name}")

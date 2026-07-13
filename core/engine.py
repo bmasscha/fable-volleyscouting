@@ -14,6 +14,9 @@ Rule summary implemented here (see plan section 1):
 - libero: back row only, may not serve (configurable), exchanges are not
   substitutions; engine flags mandatory swap-backs via pending_alerts()
 - substitutions: 6 per set, exclusive pairs (validated as warnings)
+- manual corrections are ordinary events: score +/-, serve possession,
+  rotation adjust (lineup rotation only -- never score or serve)
+- reception overpass: ball crosses straight back, serving team attacks
 """
 from __future__ import annotations
 
@@ -23,8 +26,8 @@ from enum import Enum
 from . import rules
 from .events import (AttackEvent, DigEvent, Event, LiberoSwapEvent,
                      ManualScoreEvent, RallyPointEvent, ReceptionEvent,
-                     ServeEvent, ServeOverrideEvent, SetStartEvent,
-                     SubstitutionEvent, TimeoutEvent)
+                     RotationAdjustEvent, ServeEvent, ServeOverrideEvent,
+                     SetStartEvent, SubstitutionEvent, TimeoutEvent)
 from .models import HOME, AWAY, MatchConfig, Rating, Team, other
 from .rotation import LEFT, RIGHT, rotate_clockwise, is_front_row
 
@@ -192,6 +195,7 @@ class MatchEngine:
             SubstitutionEvent: self._on_substitution,
             LiberoSwapEvent: self._on_libero_swap,
             ManualScoreEvent: self._on_manual_score,
+            RotationAdjustEvent: self._on_rotation_adjust,
             ServeOverrideEvent: self._on_serve_override,
             TimeoutEvent: self._on_timeout,
         }.get(type(e))
@@ -258,6 +262,9 @@ class MatchEngine:
             w.append("reception charged to the serving team")
         if e.rating == Rating.ERROR:                      # aced
             self._award_point(other(e.team))
+        elif e.overpass:                                  # ball straight back
+            st.phase = Phase.ATTACK
+            st.attacking_team = other(e.team)
         else:
             st.phase = Phase.ATTACK
             st.attacking_team = e.team
@@ -347,6 +354,15 @@ class MatchEngine:
         st.scores[e.team] = max(0, st.scores[e.team] + e.delta)
         self._check_set_end()
         return []
+
+    def _on_rotation_adjust(self, e: RotationAdjustEvent) -> list[str]:
+        w = []
+        if self.rally_live():
+            w.append("rotation adjusted during a live rally")
+        ts = self.state.team[e.team]
+        for _ in range(e.steps % 6):
+            ts.lineup = rotate_clockwise(ts.lineup)
+        return w
 
     def _on_serve_override(self, e: ServeOverrideEvent) -> list[str]:
         self.state.serving_team = e.team

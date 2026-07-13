@@ -22,6 +22,9 @@ def _register(cls):
 @dataclass(frozen=True)
 class Event:
     TYPE: ClassVar[str] = "event"
+    # Wall-clock unix timestamp stamped by the UI when the event is entered.
+    # Purely informational (video sync): replay/state never depends on it.
+    ts: float | None = field(default=None, kw_only=True)
 
 
 @_register
@@ -48,10 +51,13 @@ class ServeEvent(Event):
 @_register
 @dataclass(frozen=True)
 class ReceptionEvent(Event):
+    """`overpass=True`: the received ball crossed straight back over the net;
+    the rally continues with the serving team in the attack phase."""
     TYPE: ClassVar[str] = "reception"
     team: str
     player_id: str
     rating: Rating
+    overpass: bool = False
 
 
 @_register
@@ -101,6 +107,17 @@ class LiberoSwapEvent(Event):
     team: str
     libero_id: str
     partner_id: str
+
+
+@_register
+@dataclass(frozen=True)
+class RotationAdjustEvent(Event):
+    """Manual rotation correction: rotates `team`'s lineup `steps` positions
+    clockwise (negative = counter-clockwise). Does NOT touch score or serve
+    possession -- the coach simply starts / stands in another rotation."""
+    TYPE: ClassVar[str] = "rotation_adjust"
+    team: str
+    steps: int = 1
 
 
 @_register

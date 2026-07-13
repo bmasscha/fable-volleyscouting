@@ -6,8 +6,8 @@ import pytest
 from core.engine import MatchEngine, Phase
 from core.events import (AttackEvent, DigEvent, LiberoSwapEvent,
                          ManualScoreEvent, RallyPointEvent, ReceptionEvent,
-                         ServeEvent, ServeOverrideEvent, SetStartEvent,
-                         SubstitutionEvent, TimeoutEvent)
+                         RotationAdjustEvent, ServeEvent, ServeOverrideEvent,
+                         SetStartEvent, SubstitutionEvent, TimeoutEvent)
 from core.models import AWAY, HOME, MatchConfig, Player, Rating, Team, other
 from core.rotation import rotate_clockwise
 
@@ -1177,3 +1177,98 @@ class TestEngineHelpers:
         clone = MatchEngine(MatchConfig(), teams)
         clone.load_events(list(engine.events))
         assert snapshot(clone) == snapshot(engine)
+
+
+# ------------------------------------------- rotation adjust (manual event)
+
+class TestRotationAdjust:
+    def test_rotates_lineup_only(self, engine):
+        start_set(engine, serving=HOME)
+        before = snapshot(engine)
+        lineup = list(engine.state.team[HOME].lineup)
+        away_lineup = list(engine.state.team[AWAY].lineup)
+        w = engine.append(RotationAdjustEvent(HOME))
+        assert w == []
+        assert engine.state.team[HOME].lineup == rotate_clockwise(lineup)
+        after = snapshot(engine)
+        for key in ("phase", "scores", "set_scores", "serving_team",
+                    "left_team", "attacking_team"):
+            assert after[key] == before[key]
+        assert engine.state.team[AWAY].lineup == away_lineup
+
+    def test_expected_server_follows_adjust(self, engine):
+        start_set(engine, serving=HOME)
+        p2 = engine.state.team[HOME].lineup[1]
+        engine.append(RotationAdjustEvent(HOME, steps=1))
+        assert engine.expected_server() == p2
+
+    def test_negative_steps_rotate_back(self, engine):
+        start_set(engine, serving=HOME)
+        lineup = list(engine.state.team[HOME].lineup)
+        engine.append(RotationAdjustEvent(HOME, steps=1))
+        engine.append(RotationAdjustEvent(HOME, steps=-1))
+        assert engine.state.team[HOME].lineup == lineup
+
+    def test_six_steps_is_full_circle(self, engine):
+        start_set(engine)
+        lineup = list(engine.state.team[AWAY].lineup)
+        engine.append(RotationAdjustEvent(AWAY, steps=6))
+        assert engine.state.team[AWAY].lineup == lineup
+
+    def test_warns_during_live_rally(self, engine):
+        start_set(engine, serving=HOME)
+        serve(engine)
+        w = engine.append(RotationAdjustEvent(HOME))
+        assert any("live rally" in x for x in w)
+
+    def test_undo_restores_rotation(self, engine):
+        start_set(engine, serving=HOME)
+        lineup = list(engine.state.team[HOME].lineup)
+        engine.append(RotationAdjustEvent(HOME))
+        engine.undo()
+        assert engine.state.team[HOME].lineup == lineup
+
+
+# --------------------------------------------------- reception overpass
+
+class TestOverpass:
+    def test_overpass_gives_ball_to_serving_team(self, engine):
+        start_set(engine, serving=HOME)
+        serve(engine)
+        engine.append(ReceptionEvent(AWAY, engine.state.team[AWAY].lineup[0],
+                                     Rating.POOR, overpass=True))
+        assert engine.state.phase == Phase.ATTACK
+        assert engine.state.attacking_team == HOME
+
+    def test_serving_team_can_kill_the_overpass(self, engine):
+        start_set(engine, serving=HOME)
+        serve(engine)
+        engine.append(ReceptionEvent(AWAY, engine.state.team[AWAY].lineup[0],
+                                     Rating.POOR, overpass=True))
+        attack(engine, HOME, Rating.PERFECT)
+        assert engine.state.scores == {HOME: 1, AWAY: 0}
+        assert engine.state.serving_team == HOME          # no side-out
+
+    def test_overpass_kept_in_play_flows_back(self, engine):
+        start_set(engine, serving=HOME)
+        serve(engine)
+        engine.append(ReceptionEvent(AWAY, engine.state.team[AWAY].lineup[0],
+                                     Rating.POOR, overpass=True))
+        attack(engine, HOME, Rating.GOOD)                  # kept in play
+        assert engine.state.phase == Phase.DEFENSE
+        dig(engine, AWAY, Rating.GOOD)
+        assert engine.state.attacking_team == AWAY         # counter-attack
+
+    def test_error_rating_beats_overpass_flag(self, engine):
+        start_set(engine, serving=HOME)
+        serve(engine)
+        engine.append(ReceptionEvent(AWAY, engine.state.team[AWAY].lineup[0],
+                                     Rating.ERROR, overpass=True))
+        assert engine.state.scores == {HOME: 1, AWAY: 0}   # aced
+        assert engine.state.phase == Phase.AWAIT_SERVE
+
+    def test_normal_reception_unchanged(self, engine):
+        start_set(engine, serving=HOME)
+        serve(engine)
+        receive(engine, Rating.GOOD)
+        assert engine.state.attacking_team == AWAY

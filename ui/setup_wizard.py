@@ -73,6 +73,18 @@ class _TeamPanel(QGroupBox):
         grid.setColumnStretch(1, 1)
         lay.addLayout(grid)
 
+        rot = QHBoxLayout()
+        rot.addWidget(QLabel("Start rotation:"))
+        for txt, steps in (("⟲ rotate", -1), ("rotate ⟳", 1)):
+            b = QPushButton(txt)
+            b.setToolTip("Shift the whole lineup one rotation — assign the "
+                         "base six once, then rotate to the coach's "
+                         "starting rotation")
+            b.clicked.connect(lambda _=False, s=steps: self._rotate(s))
+            rot.addWidget(b)
+        rot.addStretch(1)
+        lay.addLayout(rot)
+
         lay.addWidget(QLabel("Libero(s) — check to designate:"))
         self.libero_list = QListWidget()
         self.libero_list.setMinimumHeight(120)
@@ -125,6 +137,16 @@ class _TeamPanel(QGroupBox):
         non_liberos = [p for p in players if p.role != Role.LIBERO]
         for combo, p in zip(self.lineup_combos, non_liberos[:6]):
             combo.setCurrentIndex(combo.findData(p.id))
+
+    def _rotate(self, steps: int) -> None:
+        """Shift the six P1..P6 assignments one rotation (P2 -> P1 etc.)."""
+        ids = [c.currentData() for c in self.lineup_combos]
+        k = steps % 6
+        ids = ids[k:] + ids[:k]
+        for combo, pid in zip(self.lineup_combos, ids):
+            idx = combo.findData(pid)
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
 
     def lineup_ids(self) -> list[str | None]:
         return [c.currentData() for c in self.lineup_combos]
