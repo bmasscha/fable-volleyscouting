@@ -1,0 +1,912 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, "Segoe UI", sans-serif;
+  background: #12202a;
+  color: #f4f7f8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: linear-gradient(180deg, #12202a, #091218 60%);
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  border: 0;
+  border-radius: 14px;
+  padding: 0.85rem 1rem;
+  background: #24404f;
+  color: inherit;
+}
+
+button.primary {
+  background: #2e7d32;
+}
+
+button.ghost {
+  background: #1b2a33;
+}
+
+button.danger {
+  background: #5a2330;
+}
+
+button:disabled {
+  opacity: 0.5;
+}
+
+input,
+select {
+  width: 100%;
+  margin-top: 0.4rem;
+  border: 1px solid #355062;
+  border-radius: 12px;
+  padding: 0.8rem;
+  background: #10202a;
+  color: inherit;
+}
+
+.shell {
+  width: min(100%, 1100px);
+  margin: 0 auto;
+  padding: 1rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.startup-card,
+.top-bar,
+.scoreboard-card,
+.status-card,
+.court-card,
+.bench-panel,
+.team-panel,
+.control-card,
+.editor-shell,
+.list-card,
+.editor-card {
+  background: rgba(13, 27, 34, 0.92);
+  border: 1px solid #223743;
+  border-radius: 20px;
+  padding: 1rem;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+}
+
+.startup-card {
+  margin-top: 12vh;
+}
+
+.top-bar,
+.scoreboard-card,
+.status-card,
+.court-card,
+.team-grid,
+.editor-layout,
+.screen-header,
+.editor-toolbar,
+.form-grid,
+.lineup-editor,
+.player-table {
+  display: grid;
+  gap: 1rem;
+}
+
+.top-bar {
+  align-items: start;
+}
+
+.screen-header,
+.editor-toolbar {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  align-items: start;
+}
+
+.button-row,
+.button-grid,
+.rating-row {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.button-row,
+.rating-row {
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.button-row.compact {
+  grid-template-columns: repeat(auto-fit, minmax(140px, max-content));
+  justify-content: end;
+}
+
+.button-grid {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.resume-summary {
+  display: grid;
+  gap: 0.35rem;
+  margin: 1rem 0;
+  padding: 0.9rem;
+  border-radius: 16px;
+  background: #10202a;
+}
+
+.scoreboard-card {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: center;
+  text-align: center;
+}
+
+.score-team strong {
+  display: block;
+  font-size: 3rem;
+  line-height: 1;
+}
+
+.score-team small,
+.muted {
+  color: #9ab1bc;
+}
+
+.score-meta {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.status-card {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.status-card.warning {
+  border-color: #9a6a27;
+}
+
+.court-card {
+  gap: 1rem;
+}
+
+.court-card-header,
+.court-card-actions,
+.court-layout,
+.court-main,
+.court-meta,
+.serve-chip-row {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.court-card-header {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  align-items: start;
+}
+
+.court-card-actions {
+  justify-items: end;
+}
+
+.court-layout {
+  grid-template-columns: minmax(200px, 240px) minmax(0, 1fr) minmax(200px, 240px);
+  align-items: start;
+}
+
+.court-main {
+  min-width: 0;
+}
+
+.court-surface {
+  width: 100%;
+  /* viewBox is 26 x 14 court metres — keep the same ratio so the SVG
+     fills the box exactly (no letterboxing) */
+  aspect-ratio: 26 / 14;
+  border-radius: 18px;
+  overflow: hidden;
+  background: #2a6f97; /* free-zone colour, same as the desktop court */
+}
+
+.court-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.court-side-label,
+.court-token-badge,
+.court-token-number,
+.court-token-name {
+  font-family: Inter, "Segoe UI", sans-serif;
+}
+
+.court-side-label {
+  fill: rgba(255, 255, 255, 0.85);
+  font-size: 0.6px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.court-token {
+  cursor: pointer;
+}
+
+/* token text mirrors ui/player_token.py: bold white number (15pt on the
+   desktop -> 0.5 m), small badge above, dark name below the disc */
+.court-token-number {
+  fill: #ffffff;
+  font-size: 0.5px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.court-token-badge {
+  fill: rgba(255, 255, 255, 0.94);
+  font-size: 0.26px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.court-token-name {
+  fill: #1b1b1b;
+  font-size: 0.28px;
+  font-weight: 600;
+  letter-spacing: 0.015em;
+}
+
+.serve-chip-row {
+  grid-template-columns: repeat(auto-fit, minmax(90px, max-content));
+  justify-content: end;
+}
+
+.serve-chip {
+  padding: 0.55rem 0.75rem;
+}
+
+.court-meta {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.team-grid,
+.controls-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.team-grid {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.controls-grid {
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+}
+
+.editor-shell {
+  display: grid;
+  gap: 1rem;
+}
+
+.editor-layout {
+  grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+  align-items: start;
+}
+
+.team-library-list {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.team-list-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  justify-content: start;
+  text-align: left;
+  border: 1px solid transparent;
+}
+
+.team-list-item.active {
+  border-color: #4b7083;
+  background: #17303b;
+}
+
+.color-dot {
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 999px;
+  flex: 0 0 auto;
+}
+
+.empty-state {
+  display: grid;
+  gap: 0.75rem;
+  min-height: 220px;
+  place-content: center;
+  text-align: center;
+}
+
+.form-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.color-field {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.color-field input[type="color"] {
+  width: 4rem;
+  min-width: 4rem;
+  padding: 0.2rem;
+}
+
+.player-table {
+  gap: 0.75rem;
+}
+
+.player-row {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: minmax(70px, 90px) minmax(0, 1.5fr) minmax(150px, 1fr) auto;
+  align-items: end;
+  padding: 0.85rem;
+  border-radius: 16px;
+  background: #10202a;
+}
+
+.lineup-editor {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.libero-box {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.checkbox-list {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.message-banner {
+  border-radius: 16px;
+  padding: 0.85rem 1rem;
+}
+
+.message-banner.error {
+  background: rgba(126, 40, 56, 0.28);
+  border: 1px solid #8d4250;
+}
+
+.message-banner.success {
+  background: rgba(37, 98, 49, 0.28);
+  border: 1px solid #3b8e4a;
+}
+
+.team-panel header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.bench-panel {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.bench-panel header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.bench-player-list {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.bench-player-button {
+  display: grid;
+  gap: 0.15rem;
+  text-align: left;
+  border: 2px solid transparent;
+  background: #17303b;
+}
+
+.bench-player-button.active {
+  border-color: #ffd600;
+  background: #24404f;
+}
+
+.bench-player-number {
+  color: #d5e4eb;
+  font-weight: 700;
+}
+
+.serve-pill {
+  border-radius: 999px;
+  padding: 0.35rem 0.7rem;
+  background: #1d2f39;
+  color: #9ab1bc;
+}
+
+.serve-pill.active {
+  background: #2e7d32;
+  color: #f4f7f8;
+}
+
+.lineup-list {
+  padding-left: 0;
+  margin: 1rem 0;
+  list-style: none;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.lineup-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.position-chip {
+  min-width: 2.4rem;
+  border-radius: 999px;
+  padding: 0.25rem 0.55rem;
+  text-align: center;
+  background: #1d2f39;
+  color: #9ab1bc;
+}
+
+.control-card {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.insights-panel {
+  display: grid;
+  gap: 1rem;
+}
+
+.report-card-header,
+.report-toolbar,
+.trajectory-filter-grid,
+.trajectory-charts {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.report-toolbar,
+.trajectory-filter-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  align-items: end;
+}
+
+.report-breakdown-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.breakdown-card {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.85rem;
+  border-radius: 16px;
+  background: #10202a;
+}
+
+.breakdown-card strong {
+  font-size: 1.35rem;
+}
+
+.report-table-wrap {
+  overflow: auto;
+  border: 1px solid #223743;
+  border-radius: 16px;
+}
+
+.report-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.report-table th,
+.report-table td {
+  padding: 0.6rem 0.7rem;
+  border-bottom: 1px solid #223743;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.report-table th {
+  position: sticky;
+  top: 0;
+  background: #17303b;
+  z-index: 1;
+}
+
+.report-table .player-col,
+.report-table .player-cell {
+  text-align: left;
+}
+
+.report-total-row {
+  font-weight: 700;
+  background: rgba(46, 125, 50, 0.16);
+}
+
+.trajectory-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9rem;
+  align-items: center;
+}
+
+.trajectory-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.trajectory-legend-swatch {
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.trajectory-charts {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.trajectory-chart-card {
+  align-content: start;
+}
+
+.trajectory-svg {
+  width: 100%;
+  aspect-ratio: 23 / 12;
+  display: block;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #3a7fa8, #20536d 88%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.setup-panel {
+  align-content: start;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.checkbox-row input {
+  width: auto;
+  margin: 0;
+}
+
+.rating-button {
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+ul {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+/* ---- match screen: everything fits one tablet viewport, no scrolling ---- */
+
+.match-shell {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  overflow: hidden;
+}
+
+.match-topbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  background: rgba(13, 27, 34, 0.92);
+  border: 1px solid #223743;
+  border-radius: 16px;
+  padding: 0.45rem 0.9rem;
+}
+
+.match-score {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.match-score strong {
+  font-size: 1.9rem;
+  line-height: 1;
+}
+
+.match-score-sep {
+  font-size: 1.4rem;
+  color: #9ab1bc;
+}
+
+.match-team {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 600;
+}
+
+.match-team small {
+  color: #9ab1bc;
+}
+
+.serve-dot {
+  color: #ffd600;
+  font-size: 0.65rem;
+}
+
+.match-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  font-size: 0.8rem;
+  color: #9ab1bc;
+  line-height: 1.25;
+  min-width: 0;
+}
+
+.match-topbar-buttons {
+  margin-left: auto;
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.match-topbar-buttons button {
+  padding: 0.45rem 0.7rem;
+  border-radius: 10px;
+  font-size: 0.85rem;
+}
+
+.match-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(140px, 180px) minmax(0, 1fr) minmax(140px, 180px);
+  gap: 0.6rem;
+}
+
+.match-body .bench-panel {
+  padding: 0.7rem;
+  gap: 0.6rem;
+  align-content: start;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.court-wrap {
+  position: relative;
+  min-height: 0;
+  display: flex;
+}
+
+/* height-constrained court: the SVG letterboxes inside (extra area is just
+   more free zone, same colour), and pointer mapping accounts for it */
+.match-body .court-surface {
+  flex: 1;
+  aspect-ratio: auto;
+  height: auto;
+}
+
+.court-toast {
+  position: absolute;
+  top: 0.6rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  max-width: 82%;
+  background: rgba(122, 83, 24, 0.95);
+  border: 1px solid #c98f2f;
+  border-radius: 12px;
+  padding: 0.5rem 0.85rem;
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+}
+
+/* ---- bottom action bar: mirrors ui/rating_bar.py ---- */
+
+.action-bar {
+  background: rgba(13, 27, 34, 0.92);
+  border: 1px solid #223743;
+  border-radius: 16px;
+  padding: 0.5rem 0.75rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.action-prompt-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 2rem;
+}
+
+.action-prompt {
+  flex: 1;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.serve-chip-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.serve-chip-mini {
+  width: 2.7rem;
+  height: 2.3rem;
+  padding: 0;
+  border-radius: 8px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.serve-chip-mini.current {
+  box-shadow: inset 0 0 0 3px #ffd600;
+}
+
+.action-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.action-big {
+  flex: 2 1 0;
+  min-height: clamp(3.4rem, 9dvh, 5rem);
+  min-width: 0;
+  border-radius: 12px;
+  padding: 0.3rem 0.4rem;
+  display: grid;
+  place-content: center;
+  gap: 0.1rem;
+  line-height: 1.15;
+  text-align: center;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #fff;
+  background: #455a64;
+  touch-action: manipulation;
+}
+
+.action-big small {
+  font-size: 0.72rem;
+  font-weight: 600;
+  opacity: 0.92;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.action-big:active:not(:disabled) {
+  box-shadow: inset 0 0 0 3px #ffd600;
+}
+
+.action-rate {
+  flex: 3 1 0;
+}
+
+.action-wide {
+  flex: 5 1 0;
+}
+
+.rate-symbol {
+  font-size: 1.55rem;
+  font-weight: 700;
+}
+
+.rate-error { background: #d32f2f; }
+.rate-poor { background: #f57c00; }
+.rate-good { background: #7cb342; }
+.rate-perfect { background: #2e7d32; }
+.rate-overpass { background: #5e35b1; }
+.rate-undo { background: #6d4c41; }
+.point-btn { background: #455a64; }
+
+/* ---- overlays: report / charts / set editor / tools scroll on top of the fixed layout ---- */
+
+.overlay-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(3, 10, 14, 0.65);
+  display: flex;
+  padding: 1rem;
+}
+
+.overlay-panel {
+  margin: auto;
+  width: min(1100px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  display: grid;
+  gap: 1rem;
+  background: #0e1c24;
+  border: 1px solid #2a4453;
+  border-radius: 20px;
+  padding: 1rem;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+
+.overlay-panel-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+@media (orientation: portrait) {
+  .match-body {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: minmax(0, 1fr) minmax(0, 12rem);
+  }
+
+  .match-body .court-wrap {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .match-body .bench-panel {
+    grid-row: 2;
+  }
+}
+
+@media (max-width: 720px) {
+  .shell {
+    padding: 0.75rem;
+  }
+
+  .court-layout,
+  .scoreboard-card {
+    grid-template-columns: 1fr;
+  }
+
+   .editor-layout {
+     grid-template-columns: 1fr;
+   }
+
+   .player-row {
+     grid-template-columns: 1fr;
+   }
+}
