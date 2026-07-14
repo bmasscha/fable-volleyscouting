@@ -31,6 +31,10 @@ Output lands in `tablet/dist/` — `index.html`, hashed assets, the icons,
 `manifest.webmanifest`, and the service worker (`sw.js` + workbox runtime).
 The build fails on TypeScript errors (`tsc --noEmit` runs first).
 
+The build is configured for GitHub Pages (`base: "/fable-volleyscouting/"`
+in `vite.config.ts`). For a root-hosted deploy, build with
+`npm --prefix tablet run build -- --base=/`.
+
 Icons live in `tablet/public/icons/` and are generated from
 `tablet/public/favicon.svg`. Only regenerate them if the artwork changes
 (render the SVG at 192/512 px, plus a padded 512 px maskable variant and a
@@ -38,26 +42,30 @@ Icons live in `tablet/public/icons/` and are generated from
 
 ## 3. Deploy
 
-Host the contents of `tablet/dist/` as static files. **PWA install and the
-service worker require HTTPS** (plain `http://` only works for `localhost`).
-The build assumes it is served from the site root; if it must live under a
-subpath (e.g. GitHub Pages project sites), set `base` in `vite.config.ts`
-and rebuild.
+**PWA install and the service worker require HTTPS** (plain `http://` only
+works for `localhost`).
 
-Options, easiest first:
-
-- **Static host with HTTPS** (Netlify / Cloudflare Pages / GitHub Pages):
-  drag-and-drop or push `tablet/dist/`. This is the recommended route — the
-  app contains no secrets and no match data ever leaves the tablet.
+- **GitHub Pages (the live route):** every push to `master` that touches
+  `tablet/` runs `.github/workflows/deploy-tablet.yml` (tests → build →
+  deploy). The app is public at
+  **https://bmasscha.github.io/fable-volleyscouting/** — anyone can open
+  that URL and install it; installed copies auto-update on their next
+  online visit.
 - **Android via USB, no hosting:** `adb reverse tcp:4173 tcp:4173`, run
-  `npm --prefix tablet run preview`, then open `http://localhost:4173` in
-  Chrome on the tablet — localhost counts as a secure context, so install
-  and offline mode work. The reverse survives until the cable is unplugged;
-  after that the installed app keeps working offline.
+  `npm --prefix tablet run preview -- --host 127.0.0.1` (the `--host` flag
+  matters: the default binds IPv6-only on Windows, while adb reverse
+  connects over IPv4 — Chrome then shows "This page isn't working"), then
+  open `http://localhost:4173/fable-volleyscouting/` in Chrome on the
+  tablet — localhost counts as a secure context, so install and offline
+  mode work. The reverse survives until the cable is unplugged; after that
+  the installed app keeps working offline. Note this is a different origin
+  than GitHub Pages, so saved teams/matches don't carry over between the
+  two installs.
 - **Quick LAN eyeballing (no install):**
   `npm --prefix tablet run preview -- --host` and open
-  `http://<pc-ip>:4173` on the tablet. The app runs, but over plain http the
-  service worker will not register — no install prompt, no offline.
+  `http://<pc-ip>:4173/fable-volleyscouting/` on the tablet. The app runs,
+  but over plain http the service worker will not register — no install
+  prompt, no offline.
 
 ## 4. Install on the device
 

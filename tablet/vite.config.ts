@@ -2,6 +2,9 @@ import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
+  // Served from https://bmasscha.github.io/fable-volleyscouting/ (GitHub Pages
+  // project site). Override with --base=/ for root-hosted deploys.
+  base: "/fable-volleyscouting/",
   esbuild: { jsx: "automatic", jsxImportSource: "preact" },
   plugins: [
     VitePWA({
