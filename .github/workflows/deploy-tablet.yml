@@ -1,3 +1,4 @@
+# Requires Pages enabled once in repo Settings -> Pages -> Source: GitHub Actions
 name: Deploy tablet app to GitHub Pages
 
 on:
