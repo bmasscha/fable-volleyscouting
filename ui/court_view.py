@@ -11,7 +11,8 @@ court y in [0, 9] (see core/rotation.py).
 """
 from __future__ import annotations
 
-from PyQt6.QtCore import QLineF, QPointF, QRectF, Qt, pyqtSignal
+from PyQt6.QtCore import (QLineF, QPointF, QRectF, Qt, QTimer,
+                          QVariantAnimation, pyqtSignal)
 from PyQt6.QtGui import (QBrush, QColor, QPainter, QPainterPath, QPen,
                          QPolygonF)
 from PyQt6.QtWidgets import QGraphicsPathItem, QGraphicsScene, QGraphicsView
@@ -31,6 +32,11 @@ NET_PEN = QPen(QColor("#222222"), 7)
 
 SERVE_ARROW = QColor("#ffffff")
 ATTACK_ARROW = QColor("#ffd600")
+
+# Once the rally is over the arrows stay briefly, then fade away
+# (mirrored by the tablet's CourtSurface ARROW_FADE transition).
+FADE_DELAY_MS = 350
+FADE_DURATION_MS = 650
 
 
 class _Arrow(QGraphicsPathItem):
@@ -75,6 +81,11 @@ class CourtView(QGraphicsView):
         self._arrows: list[_Arrow] = []
         self._press_scene: QPointF | None = None
         self._rubber: _Arrow | None = None
+        self._fade_delay = QTimer(self)
+        self._fade_delay.setSingleShot(True)
+        self._fade_delay.setInterval(FADE_DELAY_MS)
+        self._fade_delay.timeout.connect(self._start_fade)
+        self._fade_anim: QVariantAnimation | None = None
 
     # ------------------------------------------------------------- painting
 
@@ -167,9 +178,46 @@ class CourtView(QGraphicsView):
     # ------------------------------------------------------------ trajectories
 
     def clear_trajectories(self) -> None:
+        self.cancel_trajectory_fade()
         for a in self._arrows:
             self._scene.removeItem(a)
         self._arrows.clear()
+
+    def fade_out_trajectories(self) -> None:
+        """The rally is over: keep the arrows briefly, then fade them away.
+        Idempotent — a fade already pending or running keeps going."""
+        if not self._arrows or self._fade_delay.isActive() or self._fade_anim:
+            return
+        self._fade_delay.start()
+
+    def cancel_trajectory_fade(self) -> None:
+        """Abort any pending/running fade (arrows are being rebuilt, e.g.
+        after an undo, or the next serve is starting)."""
+        self._fade_delay.stop()
+        if self._fade_anim is not None:
+            anim, self._fade_anim = self._fade_anim, None
+            anim.stop()
+
+    def _start_fade(self) -> None:
+        targets = [(a, a.opacity()) for a in self._arrows]
+        if not targets:
+            return
+        anim = QVariantAnimation(self)
+        anim.setStartValue(1.0)
+        anim.setEndValue(0.0)
+        anim.setDuration(FADE_DURATION_MS)
+        anim.valueChanged.connect(lambda v: [
+            a.setOpacity(base * float(v)) for a, base in targets])
+        anim.finished.connect(self._finish_fade)
+        self._fade_anim = anim
+        anim.start()
+
+    def _finish_fade(self) -> None:
+        # cancel_trajectory_fade() also fires `finished` via stop(); it
+        # nulls _fade_anim first, so only a natural finish clears arrows.
+        if self._fade_anim is not None:
+            self._fade_anim = None
+            self.clear_trajectories()
 
     def add_trajectory(self, x1: float, y1: float, x2: float, y2: float,
                        kind: str = "attack") -> None:

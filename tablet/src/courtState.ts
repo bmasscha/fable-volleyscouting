@@ -153,6 +153,15 @@ export function serveIsOut(
   return !(0 - tolerance <= x2 && x2 <= COURT_HALF_LENGTH + tolerance);
 }
 
+/** True between rallies (point scored, set or match over): the finished
+ * rally's trajectories should fade off the court instead of lingering
+ * until the next serve is drawn. Derived from engine state so an undo
+ * that reopens the rally brings the arrows straight back. */
+export function trajectoriesExpired(engine: MatchEngine): boolean {
+  const phase = engine.state.phase;
+  return phase === Phase.AWAIT_SERVE || phase === Phase.SET_OVER || phase === Phase.MATCH_OVER;
+}
+
 export function recentCourtTrajectories(
   events: MatchEvent[],
   limit = 5,

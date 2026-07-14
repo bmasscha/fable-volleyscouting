@@ -9,6 +9,7 @@ import {
   nearestPlayerId,
   recentCourtTrajectories,
   serveIsOut,
+  trajectoriesExpired,
 } from "../src/courtState";
 
 function makeEngine(leftTeam: TeamKey = HOME, servingTeam: TeamKey = HOME): MatchEngine {
@@ -106,5 +107,23 @@ describe("court state helpers", () => {
       trajectory: [-10.2, 7.5, 1, 6],
       opacity: 1,
     });
+  });
+
+  test("marks trajectories expired only between rallies", () => {
+    const engine = makeEngine();
+
+    expect(trajectoriesExpired(engine)).toBe(true); // before the first serve
+
+    engine.append({
+      type: "serve", team: HOME, player_id: "h1",
+      rating: Rating.GOOD, trajectory: [-10.2, 7.5, 2, 4.5],
+    });
+    expect(trajectoriesExpired(engine)).toBe(false); // rally underway
+
+    engine.append({ type: "rally_point", team: AWAY, reason: "manual" });
+    expect(trajectoriesExpired(engine)).toBe(true); // point scored
+
+    engine.undo();
+    expect(trajectoriesExpired(engine)).toBe(false); // undo reopens the rally
   });
 });

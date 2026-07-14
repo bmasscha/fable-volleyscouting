@@ -620,6 +620,14 @@ class MainWindow(QMainWindow):
                                   serving=serving))
         self.court.update_tokens(specs)
 
+        # --- finished rally's arrows fade out instead of lingering until
+        # the next serve; derived from engine state, so undoing the
+        # rally-ending event brings them straight back (via _rebuild_arrows)
+        if st.phase in (Phase.AWAIT_SERVE, Phase.SET_OVER, Phase.MATCH_OVER):
+            self.court.fade_out_trajectories()
+        else:
+            self.court.cancel_trajectory_fade()
+
         # --- benches follow court sides
         for panel, tk in ((self.bench_left, left), (self.bench_right, right)):
             panel.team_key = tk

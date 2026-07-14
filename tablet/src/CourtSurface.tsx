@@ -34,6 +34,9 @@ const RUBBER_WIDTH = 0.075; // 3 px
 
 const SERVE_ARROW = "#ffffff";
 const ATTACK_ARROW = "#ffd600";
+// Once the rally is over the arrows stay briefly, then fade away
+// (matches ui/court_view.py FADE_DELAY_MS / FADE_DURATION_MS).
+const ARROW_FADE = "opacity 0.65s ease 0.35s";
 
 const TOKEN_RADIUS = 0.75; // 30 px disc, comfortable touch target
 const SETTER_RING = "#ffd600";
@@ -69,6 +72,7 @@ interface CourtSurfaceProps {
   rightTeamName: string;
   tokens: CourtTokenSpec[];
   trajectories: CourtTrajectorySpec[];
+  trajectoriesExpired: boolean;
   onPlayerTap: (teamKey: string, playerId: string) => void;
   onCourtTap: (x: number, y: number) => void;
   onTrajectory: (x1: number, y1: number, x2: number, y2: number) => void;
@@ -124,6 +128,7 @@ export function CourtSurface({
   rightTeamName,
   tokens,
   trajectories,
+  trajectoriesExpired,
   onPlayerTap,
   onCourtTap,
   onTrajectory,
@@ -289,7 +294,8 @@ export function CourtSurface({
           {rightTeamName}
         </text>
 
-        {/* recorded trajectories, newest fully opaque, older ones faded */}
+        {/* recorded trajectories, newest fully opaque, older ones faded;
+            after the rally they fade out entirely (undo snaps them back) */}
         {trajectories.map(({ kind, trajectory, opacity }, index) => {
           const [x1, y1, x2, y2] = trajectory;
           return (
@@ -301,7 +307,10 @@ export function CourtSurface({
               stroke-width={ARROW_WIDTH}
               stroke-linecap="round"
               stroke-linejoin="round"
-              opacity={opacity}
+              style={{
+                opacity: trajectoriesExpired ? 0 : opacity,
+                transition: trajectoriesExpired ? ARROW_FADE : "none",
+              }}
             />
           );
         })}

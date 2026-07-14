@@ -48,6 +48,7 @@ import {
   nearestPlayerId,
   recentCourtTrajectories,
   serveIsOut,
+  trajectoriesExpired,
 } from "./courtState";
 import {
   benchEntries,
@@ -1248,6 +1249,7 @@ export function App() {
     }
     return trajectories;
   }, [session, pendingAttack]);
+  const rallyTrajectoriesExpired = engine != null && trajectoriesExpired(engine);
 
   useEffect(() => {
     const fallback = engine?.expected_server() ?? serveOptions[0]?.id ?? "";
@@ -1862,6 +1864,7 @@ export function App() {
             rightTeamName={rightName}
             tokens={courtTokens}
             trajectories={recentTrajectories}
+            trajectoriesExpired={rallyTrajectoriesExpired}
             onPlayerTap={(teamKey, playerId) => handleCourtPlayerTap(teamKey as TeamKey, playerId)}
             onCourtTap={handleCourtTap}
             onTrajectory={handleCourtTrajectory}
