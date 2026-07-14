@@ -1234,9 +1234,20 @@ export function App() {
   const courtTokens = useMemo(() => (
     engine == null ? [] : buildCourtTokens(engine, candidate, formationsEnabled)
   ), [candidate, engine, formationsEnabled]);
-  const recentTrajectories = useMemo(() => (
-    session == null ? [] : recentCourtTrajectories(session.events)
-  ), [session]);
+  const recentTrajectories = useMemo(() => {
+    if (session == null) {
+      return [];
+    }
+    const trajectories = recentCourtTrajectories(session.events);
+    if (pendingAttack?.trajectory != null) {
+      trajectories.push({
+        kind: "attack",
+        trajectory: pendingAttack.trajectory,
+        opacity: 1,
+      });
+    }
+    return trajectories;
+  }, [session, pendingAttack]);
 
   useEffect(() => {
     const fallback = engine?.expected_server() ?? serveOptions[0]?.id ?? "";
