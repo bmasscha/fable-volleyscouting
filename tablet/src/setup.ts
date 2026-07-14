@@ -75,9 +75,9 @@ export function cloneTeam(team: Team): Team {
 function makeDefaultPlayers(prefix: string, numberOffset: number, idPrefix: string): Player[] {
   return [
     make_player(numberOffset + 1, `${prefix} Setter`, Role.SETTER, `${idPrefix}-01`),
-    make_player(numberOffset + 2, `${prefix} Opposite`, Role.OPPOSITE, `${idPrefix}-02`),
+    make_player(numberOffset + 2, `${prefix} Outside 1`, Role.OUTSIDE, `${idPrefix}-02`),
     make_player(numberOffset + 3, `${prefix} Middle 1`, Role.MIDDLE, `${idPrefix}-03`),
-    make_player(numberOffset + 4, `${prefix} Outside 1`, Role.OUTSIDE, `${idPrefix}-04`),
+    make_player(numberOffset + 4, `${prefix} Opposite`, Role.OPPOSITE, `${idPrefix}-04`),
     make_player(numberOffset + 5, `${prefix} Outside 2`, Role.OUTSIDE, `${idPrefix}-05`),
     make_player(numberOffset + 6, `${prefix} Middle 2`, Role.MIDDLE, `${idPrefix}-06`),
     make_player(numberOffset + 7, `${prefix} Libero`, Role.LIBERO, `${idPrefix}-07`),
