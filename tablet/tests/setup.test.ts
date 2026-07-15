@@ -20,6 +20,44 @@ describe("match setup draft", () => {
     expect(draft.lineups[HOME]).not.toContain("home-07");
     expect(draft.liberos[HOME]).toContain("home-07");
   });
+
+  test("rebuilding once the roster library loads still designates the liberos", () => {
+    // App builds a draft on mount while rosterLibrary is still empty, then
+    // rebuilds it when the stored library lands. The libero designation has
+    // to survive that: without it nothing is registered as libero and the
+    // automatic exchange never runs.
+    const library = createSeedRosterLibrary();
+    const beforeLibrary = makeMatchSetupDraft([], null);
+    expect(beforeLibrary.liberos[HOME]).toEqual([]);
+
+    const draft = makeMatchSetupDraft(library, beforeLibrary);
+
+    expect(draft.liberos[HOME]).toContain("home-07");
+    expect(draft.liberos[AWAY]).toContain("away-07");
+  });
+
+  test("keeps an explicit libero selection when the team is unchanged", () => {
+    const library = createSeedRosterLibrary();
+    const draft = makeMatchSetupDraft(library);
+    draft.liberos[HOME] = [];
+
+    const rebuilt = makeMatchSetupDraft(library, draft);
+
+    expect(rebuilt.liberos[HOME]).toEqual([]);
+  });
+
+  test("designates the liberos of the team a dropped selection falls back to", () => {
+    const library = createSeedRosterLibrary();
+    const draft = makeMatchSetupDraft(library);
+    expect(draft.liberos[HOME]).toEqual(["home-07"]);
+
+    // "Home" is gone from the library, so the draft resolves to another team
+    const withoutHome = library.filter((team) => team.name !== "Home");
+    const rebuilt = makeMatchSetupDraft(withoutHome, draft);
+
+    expect(rebuilt.homeTeamName).toBe("Away");
+    expect(rebuilt.liberos[HOME]).toEqual(["away-07"]);
+  });
 });
 
 describe("team editor validation", () => {

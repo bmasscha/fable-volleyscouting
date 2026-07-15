@@ -230,12 +230,17 @@ function normalizeLineup(lineup: string[] | undefined, team: Team | null): strin
   return normalized;
 }
 
+/** `useDefaults` = the team was just (re)resolved, so every player whose
+ * role is libero is designated -- as applyTeamSelection does on a team
+ * change, and as the desktop wizard does. An existing selection for an
+ * unchanged team is kept as it is, including an empty one: unticking the
+ * last libero must survive a draft rebuild. */
 function normalizeLiberos(liberos: string[] | undefined, team: Team | null, useDefaults: boolean): string[] {
   if (team == null) {
     return [];
   }
-  if (liberos == null) {
-    return useDefaults ? defaultTeamLiberos(team) : [];
+  if (useDefaults || liberos == null) {
+    return defaultTeamLiberos(team);
   }
   const available = new Set(team.players.map((player) => player.id));
   const normalized: string[] = [];
@@ -280,8 +285,16 @@ export function makeMatchSetupDraft(
       [AWAY]: normalizeLineup(previous?.lineups[AWAY], awayTeam),
     },
     liberos: {
-      [HOME]: normalizeLiberos(previous?.liberos[HOME], homeTeam, previous == null),
-      [AWAY]: normalizeLiberos(previous?.liberos[AWAY], awayTeam, previous == null),
+      // a draft built before the roster library had loaded resolves to no
+      // team and no liberos; the rebuild once the library lands must
+      // designate them again, so key the defaults on the team, not on
+      // previous == null
+      [HOME]: normalizeLiberos(
+        previous?.liberos[HOME], homeTeam,
+        previous == null || previous.homeTeamName !== homeTeamName),
+      [AWAY]: normalizeLiberos(
+        previous?.liberos[AWAY], awayTeam,
+        previous == null || previous.awayTeamName !== awayTeamName),
     },
     servingTeam: previous?.servingTeam ?? HOME,
     leftTeam: previous?.leftTeam ?? HOME,
