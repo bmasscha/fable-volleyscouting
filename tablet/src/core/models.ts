@@ -128,6 +128,9 @@ export interface MatchConfig {
   subs_per_set: number;
   libero_may_serve: boolean; // FIVB default false; some federations allow it
   deciding_set_switch_at: number;
+  // app enters forced / learned libero exchanges itself (see
+  // MatchEngine.next_auto_libero_swap); off = every exchange is manual
+  auto_libero: boolean;
 }
 
 export function default_config(): MatchConfig {
@@ -139,6 +142,7 @@ export function default_config(): MatchConfig {
     subs_per_set: 6,
     libero_may_serve: false,
     deciding_set_switch_at: 8,
+    auto_libero: true,
   };
 }
 
@@ -151,6 +155,7 @@ export function config_to_dict(c: MatchConfig): Record<string, unknown> {
     subs_per_set: c.subs_per_set,
     libero_may_serve: c.libero_may_serve,
     deciding_set_switch_at: c.deciding_set_switch_at,
+    auto_libero: c.auto_libero,
   };
 }
 

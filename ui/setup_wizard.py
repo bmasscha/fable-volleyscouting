@@ -247,6 +247,14 @@ class MatchSetupDialog(QDialog):
         self.libero_serve_chk = QCheckBox("Libero may serve")
         self.libero_serve_chk.setChecked(False)
         fg.addWidget(self.libero_serve_chk, 4, 0, 1, 2)
+
+        self.auto_libero_chk = QCheckBox("Automatic libero exchange")
+        self.auto_libero_chk.setChecked(True)
+        self.auto_libero_chk.setToolTip(
+            "The app enters forced front-row swap-backs and the learned\n"
+            "serve-receive re-entry itself; the libero's first entry of a\n"
+            "set is always yours.")
+        fg.addWidget(self.auto_libero_chk, 5, 0, 1, 2)
         bottom.addWidget(fmt_box, 1)
         root.addLayout(bottom)
 
@@ -319,6 +327,7 @@ class MatchSetupDialog(QDialog):
             points_deciding_set=self.deciding_spin.value(),
             subs_per_set=self.subs_spin.value(),
             libero_may_serve=self.libero_serve_chk.isChecked(),
+            auto_libero=self.auto_libero_chk.isChecked(),
         )
         self.set_start_event = SetStartEvent(
             set_number=1,

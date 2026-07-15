@@ -45,6 +45,7 @@ export interface MatchSetupDraft {
   pointsDecidingSet: number;
   subsPerSet: number;
   liberoMayServe: boolean;
+  autoLibero: boolean;
 }
 
 export interface MatchSetupResult {
@@ -289,6 +290,7 @@ export function makeMatchSetupDraft(
     pointsDecidingSet: previous?.pointsDecidingSet ?? defaults.points_deciding_set,
     subsPerSet: previous?.subsPerSet ?? defaults.subs_per_set,
     liberoMayServe: previous?.liberoMayServe ?? defaults.libero_may_serve,
+    autoLibero: previous?.autoLibero ?? defaults.auto_libero,
   };
 }
 
@@ -390,6 +392,7 @@ export function buildMatchSetupResult(
     points_deciding_set: normalizedBoundedInteger(draft.pointsDecidingSet, 5, 99),
     subs_per_set: normalizedBoundedInteger(draft.subsPerSet, 0, 20),
     libero_may_serve: draft.liberoMayServe,
+    auto_libero: draft.autoLibero,
   };
   return {
     error: null,

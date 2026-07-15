@@ -105,6 +105,7 @@ export function buildCourtTokens(
   engine: MatchEngine,
   selected: CandidateSelection | null,
   formationsEnabled: boolean,
+  showRolesEnabled = false,
 ): CourtTokenSpec[] {
   const state = engine.state;
   const tokens: CourtTokenSpec[] = [];
@@ -121,11 +122,12 @@ export function buildCourtTokens(
       }
       const isLibero = teamState.liberos.includes(playerId) || player.role === Role.LIBERO;
       const isSetter = player.role === Role.SETTER;
+      const roleLabel = player.role.charAt(0).toUpperCase() + player.role.slice(1);
       tokens.push({
         teamKey,
         playerId,
         number: player.number,
-        name: player.name,
+        name: showRolesEnabled ? roleLabel : player.name,
         color: isLibero ? LIBERO_TOKEN_COLOR : isSetter ? SETTER_TOKEN_COLOR : team.color,
         badge: isLibero ? "L" : isSetter ? "S" : "",
         x: positions[playerId]![0],

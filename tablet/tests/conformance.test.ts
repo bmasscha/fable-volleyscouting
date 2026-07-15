@@ -36,10 +36,13 @@ function snapshot(engine: MatchEngine) {
       subs_used: ts.subs_used,
       sub_pairs: ts.sub_pairs.map((p) => [...p]),
       libero_replaced: { ...ts.libero_replaced },
+      libero_partners: Object.fromEntries(
+        Object.entries(ts.libero_partners).map(([lib, ps]) => [lib, [...ps]])),
       timeouts: ts.timeouts,
     };
   }
   const sug = engine.suggest_next_set_start();
+  const nxt = engine.next_auto_libero_swap();
   return {
     phase: st.phase,
     set_number: st.set_number,
@@ -57,6 +60,7 @@ function snapshot(engine: MatchEngine) {
     set_point_info: engine.set_point_info(),
     pending_alerts: engine.pending_alerts(),
     suggest_next: sug === null ? null : event_to_dict(sug),
+    next_auto_libero_swap: nxt === null ? null : event_to_dict(nxt),
   };
 }
 

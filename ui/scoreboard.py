@@ -18,13 +18,14 @@ class Scoreboard(QWidget):
         root.setSpacing(2)
 
         row = QHBoxLayout()
-        self.t_left = QPushButton("T")
-        self.t_right = QPushButton("T")
+        self.t_left = QPushButton("T  ○ ○")
+        self.t_right = QPushButton("○ ○  T")
         for b in (self.t_left, self.t_right):
-            b.setFixedSize(44, 44)
+            b.setFixedSize(90, 44)
             b.setToolTip("Timeout")
-            b.setStyleSheet("QPushButton { font-size:18px; font-weight:bold;"
-                            " color:white; background:#546e7a; border-radius:8px; }")
+            b.setStyleSheet("QPushButton { font-size:15px; font-weight:bold;"
+                            " color:white; background:#37474f; border-radius:8px;"
+                            " border: 1px solid #455a64; }")
         self.t_left.clicked.connect(self.timeout_left_clicked)
         self.t_right.clicked.connect(self.timeout_right_clicked)
 
@@ -85,6 +86,7 @@ class Scoreboard(QWidget):
                     left_score: int, right_score: int,
                     sets_left: int, sets_right: int, set_number: int,
                     serving_side: str | None, server_text: str,
+                    left_timeouts: int = 0, right_timeouts: int = 0,
                     left_color: str = "#eee", right_color: str = "#eee") -> None:
         dot_l = "● " if serving_side == "left" else ""
         dot_r = " ●" if serving_side == "right" else ""
@@ -99,6 +101,24 @@ class Scoreboard(QWidget):
         self.sets.setText(f"sets {sets_left} : {sets_right}")
         self.set_no.setText(f"set {set_number}")
         self.server.setText(server_text)
+
+        # Update timeout buttons
+        left_to_display = min(left_timeouts, 2)
+        right_to_display = min(right_timeouts, 2)
+        dot_list_l = ["●"] * left_to_display + ["○"] * (2 - left_to_display)
+        dot_list_r = ["●"] * right_to_display + ["○"] * (2 - right_to_display)
+        self.t_left.setText(f"T  {' '.join(dot_list_l)}")
+        self.t_right.setText(f"{' '.join(dot_list_r)}  T")
+
+        for b, to_cnt in ((self.t_left, left_timeouts), (self.t_right, right_timeouts)):
+            if to_cnt >= 2:
+                b.setStyleSheet("QPushButton { font-size:15px; font-weight:bold;"
+                                " color:#888; background:#1c262b; border-radius:8px;"
+                                " border: 1px dashed #37474f; }")
+            else:
+                b.setStyleSheet("QPushButton { font-size:15px; font-weight:bold;"
+                                " color:white; background:#37474f; border-radius:8px;"
+                                " border: 1px solid #455a64; }")
 
     def show_alert(self, text: str) -> None:
         if text:

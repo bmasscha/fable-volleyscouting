@@ -15,6 +15,10 @@
  *   team reaches 8 points
  * - libero: back row only, may not serve (configurable), exchanges are not
  *   substitutions; engine flags mandatory swap-backs via pending_alerts()
+ *   and, with config.auto_libero, proposes the exchanges itself one at a
+ *   time via next_auto_libero_swap() (forced front-row exits, then learned
+ *   re-entries at serve-receive) for the UIs to append on the scouter's
+ *   behalf
  * - substitutions: 6 per set, exclusive pairs (validated as warnings)
  * - manual corrections are ordinary events: score +/-, serve possession,
  *   rotation adjust (lineup rotation only -- never score or serve)
@@ -32,10 +36,10 @@ import {
   ServeOverrideEvent, SetStartEvent, SubstitutionEvent, TimeoutEvent,
 } from "./events";
 import {
-  AWAY, HOME, MatchConfig, Rating, TEAM_KEYS, Team, TeamKey, other,
+  AWAY, HOME, MatchConfig, Rating, Role, TEAM_KEYS, Team, TeamKey, other,
   team_player,
 } from "./models";
-import { LEFT, RIGHT, is_front_row, rotate_clockwise } from "./rotation";
+import { BACK_ROW, LEFT, RIGHT, is_front_row, rotate_clockwise } from "./rotation";
 
 export const Phase = {
   BEFORE_SET: "before_set", // waiting for a SetStartEvent
@@ -55,13 +59,17 @@ export interface TeamSetState {
   subs_used: number;
   sub_pairs: [string, string][];
   libero_replaced: Record<string, string>; // libero -> partner off court
+  // libero -> every partner they have entered for this set, in entry
+  // order; drives the learned re-entry in next_auto_libero_swap()
+  libero_partners: Record<string, string[]>;
   timeouts: number;
 }
 
 export function empty_team_set_state(): TeamSetState {
   return {
     lineup: [], starting_lineup: [], liberos: [],
-    subs_used: 0, sub_pairs: [], libero_replaced: {}, timeouts: 0,
+    subs_used: 0, sub_pairs: [], libero_replaced: {},
+    libero_partners: {}, timeouts: 0,
   };
 }
 
@@ -210,6 +218,64 @@ export class MatchEngine {
       }
     }
     return alerts;
+  }
+
+  /** The next libero exchange the app should enter on the scouter's
+   * behalf, or null. The UIs call this in a loop after appending a
+   * user event (each returned event must be appended before asking
+   * again):
+   * 1. forced exits -- a libero rotated to the front row, or stands
+   *    at P1 while their team serves and may not: the recorded
+   *    partner returns;
+   * 2. learned re-entry -- at serve-receive the receiving team's
+   *    libero re-enters for a previous partner now in the back row,
+   *    falling back to a back-row middle. The libero's first entry
+   *    of a set is always manual: that is how the coach's actual
+   *    pairing is expressed. */
+  next_auto_libero_swap(): LiberoSwapEvent | null {
+    if (!this.config.auto_libero) return null;
+    const st = this.state;
+    if (st.phase !== Phase.AWAIT_SERVE) return null;
+    for (const tk of TEAM_KEYS) { // 1) forced exits
+      const ts = st.team[tk];
+      for (const [lib_id, partner_id] of Object.entries(ts.libero_replaced)) {
+        if (!ts.lineup.includes(lib_id)) continue;
+        const slot = ts.lineup.indexOf(lib_id);
+        if (is_front_row(slot) || (
+            slot === 0 && tk === st.serving_team
+            && !this.config.libero_may_serve)) {
+          return {
+            type: "libero_swap", ts: null, team: tk,
+            libero_id: lib_id, partner_id, auto: true,
+          };
+        }
+      }
+    }
+    const tk = this.receiving_team(); // 2) re-entry
+    const ts = st.team[tk];
+    if (ts.liberos.some((lib) => ts.lineup.includes(lib))) {
+      return null; // one libero on court at a time
+    }
+    const back = BACK_ROW.map((i) => ts.lineup[i]); // P1, P6, P5 -- P1 first:
+    for (const lib_id of ts.liberos) { // they just rotated back
+      const learned = ts.libero_partners[lib_id] ?? [];
+      if (!learned.length) continue; // first entry of the set: manual
+      let partner = back.find((p) => learned.includes(p)) ?? null;
+      if (partner == null) {
+        const team = this.teams[tk];
+        partner = back.find((p) => {
+          const pl = team_player(team, p);
+          return pl != null && pl.role === Role.MIDDLE;
+        }) ?? null;
+      }
+      if (partner != null) {
+        return {
+          type: "libero_swap", ts: null, team: tk,
+          libero_id: lib_id, partner_id: partner, auto: true,
+        };
+      }
+    }
+    return null;
   }
 
   /** Prefill for the next set: sides switch, first serve alternates,
@@ -444,6 +510,10 @@ export class MatchEngine {
       if (ts.lineup.includes(e.partner_id)) {
         ts.lineup[ts.lineup.indexOf(e.partner_id)] = e.libero_id;
         ts.libero_replaced[e.libero_id] = e.partner_id;
+        const partners = (ts.libero_partners[e.libero_id] ??= []);
+        if (!partners.includes(e.partner_id)) {
+          partners.push(e.partner_id);
+        }
       }
     }
     return w;

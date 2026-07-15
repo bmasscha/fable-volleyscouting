@@ -115,7 +115,7 @@ function all_event_samples(teams: Record<TeamKey, Team>): MatchEvent[] {
     { type: "dig", ts: null, team: HOME, player_id: h[5]!, rating: Rating.GOOD } satisfies DigEvent,
     { type: "rally_point", ts: null, team: AWAY, reason: "net fault" } satisfies RallyPointEvent,
     { type: "substitution", ts: null, team: HOME, player_out: h[0]!, player_in: h[7]! } satisfies SubstitutionEvent,
-    { type: "libero_swap", ts: null, team: AWAY, libero_id: a[6]!, partner_id: a[2]! } satisfies LiberoSwapEvent,
+    { type: "libero_swap", ts: null, team: AWAY, libero_id: a[6]!, partner_id: a[2]!, auto: false } satisfies LiberoSwapEvent,
     { type: "manual_score", ts: null, team: HOME, delta: -1 } satisfies ManualScoreEvent,
     { type: "serve_override", ts: null, team: AWAY } satisfies ServeOverrideEvent,
     { type: "timeout", ts: null, team: HOME } satisfies TimeoutEvent,

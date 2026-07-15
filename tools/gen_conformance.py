@@ -90,9 +90,12 @@ def snapshot(engine: MatchEngine) -> dict:
             "subs_used": ts.subs_used,
             "sub_pairs": [list(p) for p in ts.sub_pairs],
             "libero_replaced": dict(ts.libero_replaced),
+            "libero_partners": {lib: list(ps)
+                                for lib, ps in ts.libero_partners.items()},
             "timeouts": ts.timeouts,
         }
     sug = engine.suggest_next_set_start()
+    nxt = engine.next_auto_libero_swap()
     return {
         "phase": st.phase.value,
         "set_number": st.set_number,
@@ -110,6 +113,7 @@ def snapshot(engine: MatchEngine) -> dict:
         "set_point_info": engine.set_point_info(),
         "pending_alerts": engine.pending_alerts(),
         "suggest_next": event_to_dict(sug) if sug is not None else None,
+        "next_auto_libero_swap": event_to_dict(nxt) if nxt is not None else None,
     }
 
 
@@ -158,6 +162,17 @@ def run_fixture(name: str, config: MatchConfig, teams: dict,
 
 # ------------------------------------------------------------ random matches
 
+def drain_auto_swaps(engine: MatchEngine, events: list) -> None:
+    """Mirror of the UI behavior with config.auto_libero: after every
+    user event the app appends the engine-proposed libero exchanges."""
+    for _ in range(6):
+        auto = engine.next_auto_libero_swap()
+        if auto is None:
+            break
+        engine.append(auto)
+        events.append(auto)
+
+
 RATING_CHOICES = [Rating.PERFECT, Rating.ERROR, Rating.GOOD, Rating.POOR]
 RATING_WEIGHTS = [8, 8, 60, 24]
 
@@ -198,6 +213,7 @@ def random_match(seed: int, config: MatchConfig,
     def emit(e) -> None:
         engine.append(e)
         events.append(e)
+        drain_auto_swaps(engine, events)
 
     while len(events) < max_events and engine.state.phase != Phase.MATCH_OVER:
         st = engine.state
@@ -422,6 +438,54 @@ def scripted_blocks() -> tuple[MatchConfig, dict, list]:
     return config, teams, ev
 
 
+def scripted_libero() -> tuple[MatchConfig, dict, list]:
+    """Pins the automatic libero exchange: manual first entry, forced
+    front-row exit, no blind re-entry without a known partner, deferral
+    while the middle serves at P1, role-fallback re-entry and learned-
+    pairing re-entry at serve-receive."""
+    config = MatchConfig()
+    teams = build_teams()
+    lib = libero_of(teams, HOME)
+    engine = MatchEngine(config, teams)
+    ev: list = []
+
+    def emit(e) -> None:
+        engine.append(e)
+        ev.append(e)
+        drain_auto_swaps(engine, ev)
+
+    def home_wins_receiving() -> None:      # side-out: HOME rotates
+        lineup = engine.state.team[HOME].lineup
+        emit(ServeEvent(team=AWAY, player_id=engine.expected_server()))
+        emit(ReceptionEvent(team=HOME, player_id=lineup[5],
+                            rating=Rating.GOOD))
+        emit(AttackEvent(team=HOME, player_id=lineup[1],
+                         rating=Rating.PERFECT))
+
+    def home_loses_serving() -> None:       # AWAY point: HOME receives next
+        emit(ServeEvent(team=HOME, player_id=engine.expected_server(),
+                        rating=Rating.ERROR))
+
+    emit(SetStartEvent(
+        set_number=1,
+        lineups={tk: starters(teams, tk) for tk in (HOME, AWAY)},
+        liberos={tk: [libero_of(teams, tk)] for tk in (HOME, AWAY)},
+        serving_team=AWAY, left_team=HOME))
+    # manual first entry: libero for the P5 middle (H5)
+    emit(LiberoSwapEvent(team=HOME, libero_id=lib, partner_id="H5"))
+    home_wins_receiving()    # rotation puts the libero at P4 -> forced exit
+    home_loses_serving()     # no partner in the back row -> no blind entry
+    home_wins_receiving()    # middle H3 rotates to P1 and must serve first
+    home_loses_serving()     # serve-receive: back-row middle H3 -> fallback
+    home_wins_receiving()    # libero rides along to P6 (back row, stays)
+    home_loses_serving()     # libero already on court -> nothing to do
+    home_wins_receiving()    # libero to P5
+    home_loses_serving()
+    home_wins_receiving()    # libero to P4 -> forced exit, H3 returns
+    home_loses_serving()     # serve-receive: learned partner H5 at P6 enters
+    return config, teams, ev
+
+
 # -------------------------------------------------------------------- main
 
 def main() -> None:
@@ -436,11 +500,15 @@ def main() -> None:
     fixtures.append(run_fixture("scripted-warnings", cfg, teams, ev))
     cfg, teams, ev = scripted_blocks()
     fixtures.append(run_fixture("scripted-blocks", cfg, teams, ev))
+    cfg, teams, ev = scripted_libero()
+    fixtures.append(run_fixture("scripted-libero", cfg, teams, ev))
 
     variants = [
         ("default", MatchConfig(), (1, 2, 3)),
+        # auto_libero off: every exchange manual, helper must stay None
         ("bo3-short", MatchConfig(sets_to_win=2, points_per_set=15,
-                                  points_deciding_set=15), (4, 5)),
+                                  points_deciding_set=15,
+                                  auto_libero=False), (4, 5)),
         ("libero-serve", MatchConfig(libero_may_serve=True), (6,)),
         ("sprint", MatchConfig(sets_to_win=3, points_per_set=5,
                                points_deciding_set=5,

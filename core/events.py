@@ -108,11 +108,15 @@ class SubstitutionEvent(Event):
 @dataclass(frozen=True)
 class LiberoSwapEvent(Event):
     """Toggles the libero: if off court, enters for partner; if on court,
-    partner returns. Not a substitution (unlimited, not counted)."""
+    partner returns. Not a substitution (unlimited, not counted).
+    `auto=True` marks an exchange the app entered on the scouter's behalf
+    (forced front-row exit or learned serve-receive re-entry); the UIs
+    undo it together with the event that triggered it."""
     TYPE: ClassVar[str] = "libero_swap"
     team: str
     libero_id: str
     partner_id: str
+    auto: bool = False
 
 
 @_register

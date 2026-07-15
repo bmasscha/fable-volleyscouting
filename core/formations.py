@@ -66,34 +66,34 @@ _RECEIVE = {
         5: (-6.5, 4.5)},  # L    passer, middle lane
     1: {0: (-6.5, 7.2),   # L    passer, right lane
         1: (-1.0, 7.0),   # S    front right: already at the net
-        2: (-5.6, 4.5),   # OH   passer, middle lane
-        3: (-1.4, 2.6),   # MB   net, slides to the middle
-        4: (-5.6, 1.0),   # OPP  tucked short left, out of the lanes
-        5: (-6.7, 2.0)},  # OH   passer, left lane
-    2: {0: (-6.4, 7.4),   # OH   passer, right lane
+        2: (-5.6, 2.0),   # OH   passer, middle lane
+        3: (-1.4, 1.0),   # MB   net, slides to the middle
+        4: (-8.0, 1.0),   # OPP  tucked short left, out of the lanes
+        5: (-6.7, 4.5)},  # OH   passer, left lane
+    2: {0: (-5.4, 7.4),   # OH   passer, right lane
         1: (-1.4, 7.4),   # MB   net right, switches to the middle
         2: (-0.9, 5.6),   # S    front middle: at the net, slides right
         3: (-5.2, 1.8),   # OH   passer, left lane
-        4: (-6.6, 4.2),   # L    passer, middle lane
-        5: (-4.6, 6.6)},  # OPP  short mid-right, out of the lanes
-    3: {0: (-6.4, 8.3),   # OPP  short in the zone-1 corner
-        1: (-5.4, 7.6),   # OH   passer, right lane
-        2: (-1.8, 7.0),   # MB   net right, switches to the middle
-        3: (-1.0, 5.9),   # S    front left: stacked right at the net
-        4: (-6.5, 1.8),   # OH   passer, left lane
-        5: (-6.5, 4.5)},  # L    passer, middle lane
+        4: (-6.6, 4.5),   # L    passer, middle lane
+        5: (-7.5, 6.6)},  # OPP  short mid-right, out of the lanes
+    3: {0: (-7.4, 8.3),   # OPP  short in the zone-1 corner
+        1: (-5.4, 1.5),   # OH   passer, right lane
+        2: (-2.5, 1.0),   # MB   net right, switches to the middle
+        3: (-1.0, 0.5),   # S    front left: stacked right at the net
+        4: (-6.5, 4.5),   # OH   passer, left lane
+        5: (-5.5, 7.5)},  # L    passer, middle lane
     4: {0: (-6.5, 7.6),   # L    passer, right lane
         1: (-1.4, 7.2),   # OPP  net right
-        2: (-5.6, 4.5),   # OH   passer, middle lane
+        2: (-5.6, 2.0),   # OH   passer, middle lane
         3: (-1.4, 1.8),   # MB   net, slides to the middle
-        4: (-4.4, 1.2),   # S    stacked short left, releases at contact
-        5: (-6.9, 2.2)},  # OH   passer, left lane
-    5: {0: (-6.5, 7.4),   # OH   passer, right lane
-        1: (-1.2, 7.2),   # MB   net right, switches to the middle
-        2: (-1.4, 4.5),   # OPP  net, switches right after contact
+        4: (-3.0, 3.0),   # S    stacked short left, releases at contact
+        5: (-6.9, 4.5)},  # OH   passer, left lane
+    5: {0: (-5.5, 7.4),   # OH   passer, right lane
+        1: (-2.0, 7.2),   # MB   net right, switches to the middle
+        2: (-0.9, 5.5),   # OPP  net, switches right after contact
         3: (-5.0, 1.6),   # OH   passer, left lane
-        4: (-6.5, 3.2),   # L    passer, middle-left lane
-        5: (-3.6, 5.4)},  # S    pushed up mid-right, releases at contact
+        4: (-6.5, 4.5),   # L    passer, middle-left lane
+        5: (-2.5, 5.4)},  # S    pushed up mid-right, releases at contact
 }
 
 # --- role-based spots (by offset from the setter + front/back row) -----

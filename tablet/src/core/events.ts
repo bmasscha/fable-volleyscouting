@@ -83,12 +83,16 @@ export interface SubstitutionEvent extends EventBase {
 }
 
 /** Toggles the libero: if off court, enters for partner; if on court,
- * partner returns. Not a substitution (unlimited, not counted). */
+ * partner returns. Not a substitution (unlimited, not counted).
+ * `auto: true` marks an exchange the app entered on the scouter's behalf
+ * (forced front-row exit or learned serve-receive re-entry); the UIs
+ * undo it together with the event that triggered it. */
 export interface LiberoSwapEvent extends EventBase {
   type: "libero_swap";
   team: TeamKey;
   libero_id: string;
   partner_id: string;
+  auto?: boolean;
 }
 
 /** Manual rotation correction: rotates `team`'s lineup `steps` positions
@@ -191,6 +195,7 @@ export function event_to_dict(e: MatchEvent): Record<string, unknown> {
       d.team = e.team;
       d.libero_id = e.libero_id;
       d.partner_id = e.partner_id;
+      d.auto = e.auto ?? false;
       break;
     case "rotation_adjust":
       d.team = e.team;
@@ -262,6 +267,7 @@ export function event_from_dict(d: any): MatchEvent {
       return {
         type: "libero_swap", ts, team: d.team,
         libero_id: d.libero_id, partner_id: d.partner_id,
+        auto: d.auto ?? false,
       };
     case "rotation_adjust":
       return {

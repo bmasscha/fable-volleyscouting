@@ -13,6 +13,10 @@ Rule summary implemented here (see plan section 1):
   team reaches 8 points
 - libero: back row only, may not serve (configurable), exchanges are not
   substitutions; engine flags mandatory swap-backs via pending_alerts()
+  and, with config.auto_libero, proposes the exchanges itself one at a
+  time via next_auto_libero_swap() (forced front-row exits, then learned
+  re-entries at serve-receive) for the UIs to append on the scouter's
+  behalf
 - substitutions: 6 per set, exclusive pairs (validated as warnings)
 - manual corrections are ordinary events: score +/-, serve possession,
   rotation adjust (lineup rotation only -- never score or serve)
@@ -33,8 +37,8 @@ from .events import (AttackEvent, DigEvent, Event, LiberoSwapEvent,
                      ManualScoreEvent, RallyPointEvent, ReceptionEvent,
                      RotationAdjustEvent, ServeEvent, ServeOverrideEvent,
                      SetStartEvent, SubstitutionEvent, TimeoutEvent)
-from .models import HOME, AWAY, MatchConfig, Rating, Team, other
-from .rotation import LEFT, RIGHT, rotate_clockwise, is_front_row
+from .models import HOME, AWAY, MatchConfig, Rating, Role, Team, other
+from .rotation import BACK_ROW, LEFT, RIGHT, rotate_clockwise, is_front_row
 
 
 class Phase(str, Enum):
@@ -55,6 +59,9 @@ class TeamSetState:
     subs_used: int = 0
     sub_pairs: list[tuple[str, str]] = field(default_factory=list)
     libero_replaced: dict[str, str] = field(default_factory=dict)  # libero -> partner off court
+    # libero -> every partner they have entered for this set, in entry
+    # order; drives the learned re-entry in next_auto_libero_swap()
+    libero_partners: dict[str, list[str]] = field(default_factory=dict)
     timeouts: int = 0
 
 
@@ -169,6 +176,56 @@ class MatchEngine:
                         f"{self.teams[tk].name}: libero {lib_n} is at P1 and "
                         f"may not serve - {par_n} must return")
         return alerts
+
+    def next_auto_libero_swap(self) -> LiberoSwapEvent | None:
+        """The next libero exchange the app should enter on the scouter's
+        behalf, or None. The UIs call this in a loop after appending a
+        user event (each returned event must be appended before asking
+        again):
+        1. forced exits -- a libero rotated to the front row, or stands
+           at P1 while their team serves and may not: the recorded
+           partner returns;
+        2. learned re-entry -- at serve-receive the receiving team's
+           libero re-enters for a previous partner now in the back row,
+           falling back to a back-row middle. The libero's first entry
+           of a set is always manual: that is how the coach's actual
+           pairing is expressed."""
+        if not self.config.auto_libero:
+            return None
+        st = self.state
+        if st.phase != Phase.AWAIT_SERVE:
+            return None
+        for tk in (HOME, AWAY):                            # 1) forced exits
+            ts = st.team[tk]
+            for lib_id, partner_id in ts.libero_replaced.items():
+                if lib_id not in ts.lineup:
+                    continue
+                slot = ts.lineup.index(lib_id)
+                if is_front_row(slot) or (
+                        slot == 0 and tk == st.serving_team
+                        and not self.config.libero_may_serve):
+                    return LiberoSwapEvent(team=tk, libero_id=lib_id,
+                                           partner_id=partner_id, auto=True)
+        tk = self.receiving_team()                         # 2) re-entry
+        ts = st.team[tk]
+        if any(lib in ts.lineup for lib in ts.liberos):
+            return None                       # one libero on court at a time
+        back = [ts.lineup[i] for i in BACK_ROW]     # P1, P6, P5 -- P1 first:
+        for lib_id in ts.liberos:                   # they just rotated back
+            learned = ts.libero_partners.get(lib_id, [])
+            if not learned:
+                continue                      # first entry of the set: manual
+            partner = next((p for p in back if p in learned), None)
+            if partner is None:
+                team = self.teams[tk]
+                partner = next(
+                    (p for p in back
+                     if (pl := team.player(p)) is not None
+                     and pl.role == Role.MIDDLE), None)
+            if partner is not None:
+                return LiberoSwapEvent(team=tk, libero_id=lib_id,
+                                       partner_id=partner, auto=True)
+        return None
 
     def suggest_next_set_start(self) -> SetStartEvent | None:
         """Prefill for the next set: sides switch, first serve alternates,
@@ -358,6 +415,9 @@ class MatchEngine:
             if e.partner_id in ts.lineup:
                 ts.lineup[ts.lineup.index(e.partner_id)] = e.libero_id
                 ts.libero_replaced[e.libero_id] = e.partner_id
+                partners = ts.libero_partners.setdefault(e.libero_id, [])
+                if e.partner_id not in partners:
+                    partners.append(e.partner_id)
         return w
 
     def _on_manual_score(self, e: ManualScoreEvent) -> list[str]:

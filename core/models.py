@@ -106,6 +106,9 @@ class MatchConfig:
     subs_per_set: int = 6
     libero_may_serve: bool = False  # FIVB default; some federations allow it
     deciding_set_switch_at: int = 8
+    # app enters forced / learned libero exchanges itself (see
+    # MatchEngine.next_auto_libero_swap); off = every exchange is manual
+    auto_libero: bool = True
 
     def to_dict(self) -> dict:
         return {
@@ -116,6 +119,7 @@ class MatchConfig:
             "subs_per_set": self.subs_per_set,
             "libero_may_serve": self.libero_may_serve,
             "deciding_set_switch_at": self.deciding_set_switch_at,
+            "auto_libero": self.auto_libero,
         }
 
     @classmethod

@@ -910,3 +910,39 @@ p {
      grid-template-columns: 1fr;
    }
 }
+
+.timeout-top-button {
+  padding: 0.25rem 0.55rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  border-radius: 8px;
+  background: #24404f;
+  color: #f4f7f8;
+  border: 1px solid #355062;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.12);
+  user-select: none;
+}
+
+.timeout-top-button:hover {
+  background: #2e4d5e;
+  border-color: #4b7083;
+  transform: translateY(-1px);
+}
+
+.timeout-top-button:active {
+  transform: translateY(1px);
+}
+
+.timeout-top-button.exhausted {
+  opacity: 0.45;
+  background: #10202a;
+  border-color: #223743;
+  color: #7b8e98;
+  box-shadow: none;
+  transform: none;
+}

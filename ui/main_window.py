@@ -104,6 +104,14 @@ class MainWindow(QMainWindow):
         self.formations_action.toggled.connect(self._on_formations_toggled)
         tb.addAction(self.formations_action)
 
+        self.roles_action = QAction("Show Roles", self)
+        self.roles_action.setCheckable(True)
+        self.roles_action.setChecked(False)
+        self.roles_action.setToolTip(
+            "Show player roles/functions below markers instead of names")
+        self.roles_action.toggled.connect(self._on_roles_toggled)
+        tb.addAction(self.roles_action)
+
         central = QWidget()
         root = QVBoxLayout(central)
         root.setContentsMargins(0, 0, 0, 0)
@@ -471,11 +479,19 @@ class MainWindow(QMainWindow):
         if not self.engine:
             return
         removed = self.engine.undo()
+        if removed is not None and self.event_log is not None:
+            self.event_log.log_undo()
+        # auto libero swaps were entered by the app, not the scouter:
+        # one undo removes them together with the event that caused them
+        while isinstance(removed, LiberoSwapEvent) and removed.auto:
+            removed = self.engine.undo()
+            if removed is None:
+                break
+            if self.event_log is not None:
+                self.event_log.log_undo()
         self._clear_pending()
         self._rebuild_arrows()
         if removed is not None:
-            if self.event_log is not None:
-                self.event_log.log_undo()
             self._hint(f"undid: {removed.TYPE}")
         self._autosave()
         self._refresh_charts()
@@ -502,11 +518,14 @@ class MainWindow(QMainWindow):
         warnings = self.engine.append(event)
         if self.event_log is not None:
             self.event_log.log_event(event)
+        auto_msgs = self._drain_auto_libero()
         if isinstance(event, (RallyPointEvent,)) or self.engine.state.phase \
                 in (Phase.AWAIT_SERVE, Phase.SET_OVER, Phase.MATCH_OVER):
             self._clear_pending(keep_arrows=True)
         if warnings:
             self._hint("⚠ " + "; ".join(warnings))
+        elif auto_msgs:
+            self._hint("; ".join(auto_msgs))
         self._autosave()
         self._refresh_charts()
         self.refresh()
@@ -514,6 +533,30 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(50, self._set_over_dialog)
         elif self.engine.state.phase == Phase.MATCH_OVER:
             QTimer.singleShot(50, self._match_over_dialog)
+
+    def _drain_auto_libero(self) -> list[str]:
+        """With config.auto_libero the app enters the engine-proposed
+        libero exchanges (forced front-row exits, learned serve-receive
+        re-entries) right after the user's event. Never called on load,
+        replay or undo -- only here, from _append."""
+        msgs: list[str] = []
+        for _ in range(6):
+            e = self.engine.next_auto_libero_swap()
+            if e is None:
+                break
+            exiting = e.libero_id in self.engine.state.team[e.team].lineup
+            e = dataclasses.replace(e, ts=time.time())
+            self.engine.append(e)
+            if self.event_log is not None:
+                self.event_log.log_event(e)
+            lib = self.teams[e.team].player(e.libero_id)
+            par = self.teams[e.team].player(e.partner_id)
+            lib_n = f"#{lib.number}" if lib else "?"
+            par_n = f"#{par.number}" if par else "?"
+            msgs.append(f"auto: {par_n} back in for libero {lib_n}"
+                        if exiting else
+                        f"auto: libero {lib_n} in for {par_n}")
+        return msgs
 
     def _clear_pending(self, keep_arrows: bool = False) -> None:
         self.candidate = None
@@ -585,6 +628,9 @@ class MainWindow(QMainWindow):
         self.formations_enabled = checked
         self.refresh()
 
+    def _on_roles_toggled(self, checked: bool) -> None:
+        self.refresh()
+
     def _nearest(self, team_key: str, x: float, y: float) -> str:
         best, best_d = None, 1e9
         for pid, (px, py) in self._positions(team_key).items():
@@ -647,8 +693,9 @@ class MainWindow(QMainWindow):
                 else:
                     color, badge = self.teams[tk].color, ""
                 highlight = (self.candidate == (tk, pid))
+                display_name = p.role.value.title() if self.roles_action.isChecked() else p.name
                 specs.append(dict(team_key=tk, player_id=pid, number=p.number,
-                                  name=p.name, color=color, badge=badge,
+                                  name=display_name, color=color, badge=badge,
                                   x=x, y=y, highlight=highlight,
                                   serving=serving))
         self.court.update_tokens(specs)
@@ -697,7 +744,11 @@ class MainWindow(QMainWindow):
             self.teams[left].name, self.teams[right].name,
             st.scores[left], st.scores[right],
             st.set_scores[left], st.set_scores[right], st.set_number,
-            serving_side, server_txt)
+            serving_side, server_txt,
+            left_timeouts=st.team[left].timeouts,
+            right_timeouts=st.team[right].timeouts,
+            left_color=self.teams[left].color,
+            right_color=self.teams[right].color)
         self.rating_bar.set_point_labels(self.teams[left].name,
                                          self.teams[right].name)
 

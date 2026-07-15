@@ -1140,6 +1140,17 @@ function MatchSetupScreen({
                   />
                   <span>Libero may serve</span>
                 </label>
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={draft.autoLibero}
+                    onChange={(event) => onDraftChange({
+                      ...draft,
+                      autoLibero: (event.currentTarget as HTMLInputElement).checked,
+                    })}
+                  />
+                  <span>Automatic libero exchange</span>
+                </label>
               </article>
             </section>
 
@@ -1168,6 +1179,7 @@ export function App() {
   const [storageError, setStorageError] = useState<string | null>(null);
 
   const [formationsEnabled, setFormationsEnabled] = useState(true);
+  const [showRolesEnabled, setShowRolesEnabled] = useState(false);
   const [candidate, setCandidate] = useState<CandidateSelection | null>(null);
   const [pendingAttack, setPendingAttack] = useState<PendingAttackState | null>(null);
   const [armedBench, setArmedBench] = useState<CandidateSelection | null>(null);
@@ -1240,8 +1252,8 @@ export function App() {
     engine == null || pendingAttack == null ? [] : playerOptions(engine, pendingAttack.teamKey)
   ), [engine, pendingAttack]);
   const courtTokens = useMemo(() => (
-    engine == null ? [] : buildCourtTokens(engine, candidate, formationsEnabled)
-  ), [candidate, engine, formationsEnabled]);
+    engine == null ? [] : buildCourtTokens(engine, candidate, formationsEnabled, showRolesEnabled)
+  ), [candidate, engine, formationsEnabled, showRolesEnabled]);
   const recentTrajectories = useMemo(() => {
     if (session == null) {
       return [];
@@ -1348,10 +1360,33 @@ export function App() {
     const preview = new MatchEngine(session.config, session.teams);
     preview.load_events(session.events);
     const warnings = preview.append(stamped);
+    // with config.auto_libero the app enters the engine-proposed libero
+    // exchanges (forced front-row exits, learned serve-receive
+    // re-entries) right after the user's event; undoLast removes them
+    // together with the event that triggered them
+    const appended: MatchEvent[] = [stamped];
+    const autoNotices: string[] = [];
+    for (let i = 0; i < 6; i++) {
+      const auto = preview.next_auto_libero_swap();
+      if (auto == null) {
+        break;
+      }
+      const exiting = preview.state.team[auto.team].lineup.includes(auto.libero_id);
+      const stampedAuto = stampEvent(auto);
+      preview.append(stampedAuto);
+      appended.push(stampedAuto);
+      const lib = team_player(session.teams[auto.team], auto.libero_id);
+      const par = team_player(session.teams[auto.team], auto.partner_id);
+      const lib_n = lib ? `#${lib.number}` : "?";
+      const par_n = par ? `#${par.number}` : "?";
+      autoNotices.push(exiting
+        ? `auto: ${par_n} back in for libero ${lib_n}`
+        : `auto: libero ${lib_n} in for ${par_n}`);
+    }
     commit({
       ...session,
-      events: [...session.events, stamped],
-      lastWarnings: warnings,
+      events: [...session.events, ...appended],
+      lastWarnings: warnings.length ? warnings : autoNotices,
       savedAt: Date.now(),
     });
     setInteractionHint(null);
@@ -1373,9 +1408,19 @@ export function App() {
     clearCourtTransientState();
     setArmedBench(null);
     setEditingNextSet(false);
+    // auto libero swaps were entered by the app, not the scouter: one
+    // undo removes them together with the event that caused them
+    let events = session.events;
+    while (events.length > 1) {
+      const last = events[events.length - 1];
+      events = events.slice(0, -1);
+      if (!(last.type === "libero_swap" && last.auto === true)) {
+        break;
+      }
+    }
     commit({
       ...session,
-      events: session.events.slice(0, -1),
+      events,
       lastWarnings: [],
       savedAt: Date.now(),
     });
@@ -1833,6 +1878,12 @@ export function App() {
         : "serve";
   const hints = CONTEXT_HINTS[ratingContext];
   const toastMessages = [...currentWarnings, ...currentAlerts];
+  const leftTimeouts = engine.state.team[leftTeam].timeouts;
+  const rightTimeouts = engine.state.team[rightTeam].timeouts;
+  const leftDisplay = Math.min(leftTimeouts, 2);
+  const rightDisplay = Math.min(rightTimeouts, 2);
+  const leftDots = "●".repeat(leftDisplay) + "○".repeat(2 - leftDisplay);
+  const rightDots = "●".repeat(rightDisplay) + "○".repeat(2 - rightDisplay);
   const leftName = teamLabel(engine.teams, leftTeam);
   const rightName = teamLabel(engine.teams, rightTeam);
 
@@ -1840,6 +1891,14 @@ export function App() {
     <main className="match-shell">
       <header className="match-topbar">
         <div className="match-score">
+          <button
+            type="button"
+            className={`timeout-top-button ${leftTimeouts >= 2 ? "exhausted" : ""}`}
+            onClick={() => appendEvent({ type: "timeout", team: leftTeam })}
+            title={`Timeout ${leftName}`}
+          >
+            T {leftDots}
+          </button>
           <span className="match-team">
             {engine.state.serving_team === leftTeam ? <span className="serve-dot">●</span> : null}
             <span>{leftName}</span>
@@ -1853,6 +1912,14 @@ export function App() {
             <span>{rightName}</span>
             {engine.state.serving_team === rightTeam ? <span className="serve-dot">●</span> : null}
           </span>
+          <button
+            type="button"
+            className={`timeout-top-button ${rightTimeouts >= 2 ? "exhausted" : ""}`}
+            onClick={() => appendEvent({ type: "timeout", team: rightTeam })}
+            title={`Timeout ${rightName}`}
+          >
+            {rightDots} T
+          </button>
         </div>
         <div className="match-meta">
           <span>Set {engine.state.set_number} · {phaseLabel(engine.state.phase)}</span>
@@ -1871,6 +1938,13 @@ export function App() {
             onClick={() => setFormationsEnabled((current) => !current)}
           >
             Formations
+          </button>
+          <button
+            type="button"
+            className={showRolesEnabled ? "primary" : ""}
+            onClick={() => setShowRolesEnabled((current) => !current)}
+          >
+            Show Roles
           </button>
           <button type="button" className={reportOpen ? "primary" : ""} onClick={() => setReportOpen((current) => !current)}>
             Report
