@@ -11,7 +11,7 @@ from __future__ import annotations
 import math
 
 from PyQt6.QtCore import QPointF, QRectF, Qt
-from PyQt6.QtGui import QColor, QPainter, QPen
+from PyQt6.QtGui import QBrush, QColor, QPainter, QPen
 from PyQt6.QtWidgets import (QComboBox, QDialog, QHBoxLayout, QLabel,
                              QVBoxLayout, QWidget)
 
@@ -39,10 +39,11 @@ class ChartCourt(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._lines: list[tuple[tuple, str]] = []   # (x1,y1,x2,y2), outcome
+        # each: (x1,y1,x2,y2), outcome, block_touch|None
+        self._lines: list[tuple[tuple, str, tuple | None]] = []
         self.setMinimumSize(360, 220)
 
-    def set_lines(self, lines: list[tuple[tuple, str]]) -> None:
+    def set_lines(self, lines: list[tuple[tuple, str, tuple | None]]) -> None:
         self._lines = lines
         self.update()
 
@@ -75,17 +76,25 @@ class ChartCourt(QWidget):
         p.setPen(QPen(QColor("#222222"), 4))
         p.drawLine(pt(0, -0.6), pt(0, COURT_WIDTH + 0.6))
 
-        for (x1, y1, x2, y2), oc in self._lines:
+        for (x1, y1, x2, y2), oc, touch in self._lines:
             color = OUTCOME_COLORS[oc]
             a, b = pt(x1, y1), pt(x2, y2)
+            v = pt(touch[0], touch[1]) if touch is not None else None
             p.setPen(QPen(color, 2.5, Qt.PenStyle.SolidLine,
                           Qt.PenCapStyle.RoundCap))
-            p.drawLine(a, b)
-            angle = math.atan2(b.y() - a.y(), b.x() - a.x())
-            head = min(10.0, math.hypot(b.x() - a.x(), b.y() - a.y()))
+            if v is not None:                        # blocked: start -> vertex
+                p.drawLine(a, v)
+            seg_a = v if v is not None else a        # arrowhead on last segment
+            p.drawLine(seg_a, b)
+            angle = math.atan2(b.y() - seg_a.y(), b.x() - seg_a.x())
+            head = min(10.0, math.hypot(b.x() - seg_a.x(), b.y() - seg_a.y()))
             for da in (math.radians(155), math.radians(-155)):
                 p.drawLine(b, QPointF(b.x() + head * math.cos(angle + da),
                                       b.y() + head * math.sin(angle + da)))
+            if v is not None:                        # dot marks the block touch
+                p.setPen(QPen(Qt.PenStyle.NoPen))
+                p.setBrush(QBrush(color))
+                p.drawEllipse(v, 3.5, 3.5)
         p.end()
 
 
@@ -211,12 +220,12 @@ class TrajectoryDialog(QDialog):
                  "Serves", "ace"),
                 (Skill.ATTACK, self.attack_court, self.attack_title,
                  "Attacks", "kill")):
-            lines = [(t.line, outcome(t.rating)) for t in selected
-                     if t.skill == skill]
+            lines = [(t.line, outcome(t.rating), t.block_touch)
+                     for t in selected if t.skill == skill]
             court.set_lines(lines)
             n = len(lines)
-            points = sum(1 for _, oc in lines if oc == "point")
-            errors = sum(1 for _, oc in lines if oc == "error")
+            points = sum(1 for _, oc, _ in lines if oc == "point")
+            errors = sum(1 for _, oc, _ in lines if oc == "error")
             title.setText(f"<b>{label}</b> — {n} total, "
                           f"<span style='color:#43a047'>{points} {win}"
                           f"{'s' if points != 1 else ''}</span>, "

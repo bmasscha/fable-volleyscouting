@@ -15,7 +15,8 @@ from PyQt6.QtCore import (QLineF, QPointF, QRectF, Qt, QTimer,
                           QVariantAnimation, pyqtSignal)
 from PyQt6.QtGui import (QBrush, QColor, QPainter, QPainterPath, QPen,
                          QPolygonF)
-from PyQt6.QtWidgets import QGraphicsPathItem, QGraphicsScene, QGraphicsView
+from PyQt6.QtWidgets import (QGraphicsEllipseItem, QGraphicsPathItem,
+                             QGraphicsScene, QGraphicsView)
 
 from core.rotation import (ATTACK_LINE, COURT_HALF_LENGTH, COURT_WIDTH,
                            FREE_ZONE_X, FREE_ZONE_Y)
@@ -40,12 +41,18 @@ FADE_DURATION_MS = 650
 
 
 class _Arrow(QGraphicsPathItem):
-    def __init__(self, x1, y1, x2, y2, color: QColor, width: float = 4.0):
+    def __init__(self, x1, y1, x2, y2, color: QColor, width: float = 4.0,
+                 vertex: QPointF | None = None):
         super().__init__()
-        line = QLineF(QPointF(x1, y1), QPointF(x2, y2))
-        path = QPainterPath(line.p1())
+        # A blocked attack bends at `vertex` (the net contact): the path runs
+        # start -> vertex -> end, arrowhead on the final segment only.
+        start = QPointF(x1, y1)
+        path = QPainterPath(start)
+        if vertex is not None:
+            path.lineTo(vertex)
+        line = QLineF(vertex if vertex is not None else start, QPointF(x2, y2))
         path.lineTo(line.p2())
-        # arrowhead
+        # arrowhead (open wings, direction vertex/start -> end)
         head = QLineF(line.p2(), line.p1())
         head.setLength(min(16.0, line.length()))
         for angle in (-25, 25):
@@ -57,6 +64,12 @@ class _Arrow(QGraphicsPathItem):
         self.setPen(QPen(color, width, Qt.PenStyle.SolidLine,
                          Qt.PenCapStyle.RoundCap))
         self.setZValue(5)
+        if vertex is not None:                # filled dot marks the block touch
+            r = 4.0
+            dot = QGraphicsEllipseItem(vertex.x() - r, vertex.y() - r,
+                                       2 * r, 2 * r, self)
+            dot.setBrush(QBrush(color))
+            dot.setPen(QPen(Qt.PenStyle.NoPen))
 
 
 class CourtView(QGraphicsView):
@@ -220,12 +233,20 @@ class CourtView(QGraphicsView):
             self.clear_trajectories()
 
     def add_trajectory(self, x1: float, y1: float, x2: float, y2: float,
-                       kind: str = "attack") -> None:
+                       kind: str = "attack", block_touch=None) -> None:
         for a in self._arrows:               # fade older arrows
             a.setOpacity(max(0.15, a.opacity() * 0.55))
         color = SERVE_ARROW if kind == "serve" else ATTACK_ARROW
-        arrow = _Arrow(x1 * M, y1 * M, x2 * M, y2 * M, color)
+        vertex = (QPointF(block_touch[0] * M, block_touch[1] * M)
+                  if block_touch is not None else None)
+        arrow = _Arrow(x1 * M, y1 * M, x2 * M, y2 * M, color, vertex=vertex)
         self._scene.addItem(arrow)
         self._arrows.append(arrow)
         if len(self._arrows) > 5:
             self._scene.removeItem(self._arrows.pop(0))
+
+    def pop_last_trajectory(self) -> None:
+        """Drop the most recently added arrow (used to swap a primed attack
+        arrow for its two-segment blocked version)."""
+        if self._arrows:
+            self._scene.removeItem(self._arrows.pop())

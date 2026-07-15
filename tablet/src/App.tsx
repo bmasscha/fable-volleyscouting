@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 
 import { CourtSurface } from "./CourtSurface";
+import {
+  BLOCK_GRAB_RADIUS,
+  BLOCK_NET_ZONE,
+  BLOCK_OUT,
+  COVERED,
+  classify_block_deflection,
+} from "./core/blocks";
 import { MatchEngine, Phase } from "./core/engine";
 import { MatchEvent, SetStartEvent } from "./core/events";
 import {
@@ -1473,6 +1480,45 @@ export function App() {
     if (engine == null) {
       return;
     }
+
+    // Two-stroke block gesture: a follow-up drag that starts near a pending
+    // attack's arrow tip (which sits at the net) is the block deflection.
+    // It auto-finalizes the attack -- no rating tap.
+    if (pendingAttack != null) {
+      const [, , px, py] = pendingAttack.trajectory;
+      const isDeflection = Math.abs(px) <= BLOCK_NET_ZONE
+        && Math.hypot(x1 - px, y1 - py) <= BLOCK_GRAB_RADIUS;
+      if (isDeflection) {
+        const team = pendingAttack.teamKey;
+        const t = pendingAttack.trajectory;
+        const landing: [number, number, number, number] = [
+          t[0], t[1], Number(x2.toFixed(2)), Number(y2.toFixed(2)),
+        ];
+        const kind = classify_block_deflection(engine.side_of(team), x2, y2);
+        const rating = kind === BLOCK_OUT
+          ? Rating.PERFECT
+          : kind === COVERED ? Rating.POOR : Rating.GOOD;
+        const preview = appendEvent({
+          type: "attack",
+          team,
+          player_id: pendingAttack.playerId,
+          rating,
+          trajectory: landing,
+          block_touch: [px, py],
+        });
+        setPendingAttack(null);
+        if (preview?.state.phase === Phase.DEFENSE) {
+          // whoever the ball now travels toward digs next -- the covering
+          // (attacking) team itself when the deflection was covered.
+          primeDigger(preview, other(preview.state.attacking_team!), landing);
+        } else {
+          setCandidate(null);
+        }
+        return;
+      }
+      // not a deflection: fall through -- the drag replaces the pending attack
+    }
+
     const trajectory: [number, number, number, number] = [
       Number(x1.toFixed(2)),
       Number(y1.toFixed(2)),

@@ -317,7 +317,9 @@ function lineColor(stat: TrajectoryStat): string {
   return "#ffffff";
 }
 
-function arrowHeadPoints([x1, y1, x2, y2]: TrajectoryStat["line"]): string {
+/** Arrowhead at (x2, y2) pointing along the segment (x1, y1) -> (x2, y2).
+ * For a blocked attack, pass the last segment (vertex -> end). */
+function arrowHeadPoints(x1: number, y1: number, x2: number, y2: number): string {
   const angle = Math.atan2(y2 - y1, x2 - x1);
   const head = Math.min(0.62, Math.hypot(x2 - x1, y2 - y1) * 0.22);
   const leftX = x2 + head * Math.cos(angle + Math.PI - Math.PI / 7);
@@ -414,21 +416,43 @@ function TrajectoryCourt({ title, lines, pointLabel }: TrajectoryCourtProps) {
           stroke-width="1.2"
           vector-effect={NON_SCALING_STROKE}
         />
-        {lines.map((stat, index) => (
-          <g key={`${stat.player_id}-${stat.set_number}-${index}`}>
-            <line
-              x1={stat.line[0]}
-              y1={stat.line[1]}
-              x2={stat.line[2]}
-              y2={stat.line[3]}
-              stroke={lineColor(stat)}
-              stroke-width="1.1"
-              stroke-linecap="round"
-              vector-effect={NON_SCALING_STROKE}
-            />
-            <polygon points={arrowHeadPoints(stat.line)} fill={lineColor(stat)} />
-          </g>
-        ))}
+        {lines.map((stat, index) => {
+          const [x1, y1, x2, y2] = stat.line;
+          const color = lineColor(stat);
+          // last segment feeding the arrowhead: vertex -> end for a
+          // blocked attack, otherwise the whole line.
+          const [fx, fy] = stat.block_touch != null ? stat.block_touch : [x1, y1];
+          return (
+            <g key={`${stat.player_id}-${stat.set_number}-${index}`}>
+              {stat.block_touch != null ? (
+                <polyline
+                  points={`${x1},${y1} ${stat.block_touch[0]},${stat.block_touch[1]} ${x2},${y2}`}
+                  fill="none"
+                  stroke={color}
+                  stroke-width="1.1"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  vector-effect={NON_SCALING_STROKE}
+                />
+              ) : (
+                <line
+                  x1={x1}
+                  y1={y1}
+                  x2={x2}
+                  y2={y2}
+                  stroke={color}
+                  stroke-width="1.1"
+                  stroke-linecap="round"
+                  vector-effect={NON_SCALING_STROKE}
+                />
+              )}
+              {stat.block_touch != null ? (
+                <circle cx={stat.block_touch[0]} cy={stat.block_touch[1]} r={0.22} fill={color} />
+              ) : null}
+              <polygon points={arrowHeadPoints(fx, fy, x2, y2)} fill={color} />
+            </g>
+          );
+        })}
       </svg>
     </article>
   );

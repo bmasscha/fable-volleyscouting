@@ -31,6 +31,9 @@ export interface CourtTokenSpec {
 export interface CourtTrajectorySpec {
   kind: "serve" | "attack";
   trajectory: Trajectory;
+  // block deflection vertex (attacks only): draw a two-segment polyline
+  // start -> vertex -> end when present.
+  blockTouch?: [number, number] | null;
   opacity: number;
 }
 
@@ -192,6 +195,7 @@ export function recentCourtTrajectories(
   return recent.map((event, index) => ({
     kind: event.type,
     trajectory: event.trajectory!,
+    blockTouch: event.type === "attack" ? event.block_touch ?? null : null,
     opacity: Math.max(0.2, 1 - (recent.length - index - 1) * 0.2),
   }));
 }

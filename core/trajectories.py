@@ -27,6 +27,8 @@ class TrajectoryStat:
     rating: Rating
     set_number: int
     line: Trajectory             # normalized: acting team plays LEFT -> RIGHT
+    # block deflection vertex (attacks only), normalized like `line`
+    block_touch: tuple[float, float] | None = None
 
 
 def outcome(rating: Rating) -> str:
@@ -59,9 +61,12 @@ def collect_trajectories(config: MatchConfig, teams: dict[str, Team],
             # in the deciding set can trigger the mid-set side switch
             side = engine.side_of(e.team)
             skill = Skill.SERVE if isinstance(e, ServeEvent) else Skill.ATTACK
+            touch = e.block_touch if isinstance(e, AttackEvent) else None
             out.append(TrajectoryStat(
                 team=e.team, player_id=e.player_id, skill=skill,
                 rating=e.rating, set_number=engine.state.set_number,
-                line=_normalize(e.trajectory, side)))
+                line=_normalize(e.trajectory, side),
+                block_touch=(to_side(touch[0], touch[1], side)
+                             if touch is not None else None)))
         engine.append(e)
     return out

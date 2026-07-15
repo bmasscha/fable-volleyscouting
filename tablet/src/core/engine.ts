@@ -19,8 +19,13 @@
  * - manual corrections are ordinary events: score +/-, serve possession,
  *   rotation adjust (lineup rotation only -- never score or serve)
  * - reception overpass: ball crosses straight back, serving team attacks
+ * - blocked attacks (AttackEvent.block_touch): a deflection landing back in
+ *   the attacker's own court keeps the rally alive with the ATTACKING team
+ *   playing the next (cover) dig; any other landing behaves like a normal
+ *   attack -- terminal ratings '#'/'!' award points exactly as always
  */
 import * as rules from "./rules";
+import { COVERED, classify_block_deflection } from "./blocks";
 import {
   AttackEvent, DigEvent, LiberoSwapEvent, ManualScoreEvent, MatchEvent,
   RallyPointEvent, ReceptionEvent, RotationAdjustEvent, ServeEvent,
@@ -359,7 +364,13 @@ export class MatchEngine {
       this._award_point(other(e.team));
     } else {
       st.phase = Phase.DEFENSE;
-      st.attacking_team = e.team; // ball travels to other side
+      const returned = (e.block_touch != null && e.trajectory != null
+        && classify_block_deflection(
+          this.side_of(e.team),
+          e.trajectory[2], e.trajectory[3]) === COVERED);
+      // a block deflection back into the attacker's court means the
+      // attacking team itself must cover (dig) the next ball
+      st.attacking_team = returned ? other(e.team) : e.team;
     }
     return w;
   }

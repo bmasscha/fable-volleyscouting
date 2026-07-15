@@ -10,6 +10,8 @@ from .models import Rating
 
 # (x1, y1, x2, y2) in court metres; net at x=0, sidelines y=0 and y=9.
 Trajectory = tuple[float, float, float, float]
+# (x, y) court metres of the block contact that deflected an attack.
+BlockTouch = tuple[float, float]
 
 _REGISTRY: dict[str, type] = {}
 
@@ -63,11 +65,15 @@ class ReceptionEvent(Event):
 @_register
 @dataclass(frozen=True)
 class AttackEvent(Event):
+    """`block_touch` set = the attack was deflected by the block: the drawn
+    path is attacker -> block_touch -> trajectory end (the final landing).
+    `trajectory` keeps meaning start -> landing either way."""
     TYPE: ClassVar[str] = "attack"
     team: str
     player_id: str
     rating: Rating
     trajectory: Trajectory | None = None
+    block_touch: BlockTouch | None = None
 
 
 @_register
@@ -166,7 +172,7 @@ def event_from_dict(d: dict) -> Event:
         v = d[f.name]
         if f.name == "rating" and v is not None:
             v = Rating(v)
-        elif f.name == "trajectory" and v is not None:
+        elif f.name in ("trajectory", "block_touch") and v is not None:
             v = tuple(v)
         kwargs[f.name] = v
     return cls(**kwargs)

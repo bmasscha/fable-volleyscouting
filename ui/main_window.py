@@ -28,6 +28,8 @@ from PyQt6.QtWidgets import (QButtonGroup, QComboBox, QDialog,
                              QWidget)
 
 from core import persistence, rotation
+from core.blocks import (BLOCK_GRAB_RADIUS, BLOCK_NET_ZONE, BLOCK_OUT, COVERED,
+                         IN_PLAY, classify_block_deflection)
 from core.engine import MatchEngine, Phase
 from core.formations import Mode, acting_setter_slot, formation_xy
 from core.events import (AttackEvent, DigEvent, LiberoSwapEvent,
@@ -267,6 +269,8 @@ class MainWindow(QMainWindow):
             return
         st = self.engine.state
         traj = (round(x1, 2), round(y1, 2), round(x2, 2), round(y2, 2))
+        if self._try_block_deflection(x1, y1, x2, y2):
+            return
         if st.phase == Phase.AWAIT_SERVE:
             team = st.serving_team
             server = self.engine.expected_server()
@@ -293,6 +297,34 @@ class MainWindow(QMainWindow):
         elif st.phase == Phase.DEFENSE:
             # counter-attack with implicit unrated dig
             self._begin_pending_attack(other(st.attacking_team), traj)
+
+    def _try_block_deflection(self, x1: float, y1: float,
+                              x2: float, y2: float) -> bool:
+        """A second drag off a primed attack that ends near the net and
+        starts on the arrow tip is the block deflection stroke: draw the
+        bent path and auto-finalize the attack (no rating tap). Returns True
+        when it consumed the drag."""
+        if self.pending_attack is None:
+            return False
+        team, attacker, ptraj = self.pending_attack
+        px, py = ptraj[2], ptraj[3]
+        if abs(px) > BLOCK_NET_ZONE:
+            return False
+        if (x1 - px) ** 2 + (y1 - py) ** 2 > BLOCK_GRAB_RADIUS ** 2:
+            return False
+        block_touch = (px, py)
+        final_traj = (ptraj[0], ptraj[1], round(x2, 2), round(y2, 2))
+        kind = classify_block_deflection(self.engine.side_of(team), x2, y2)
+        rating = {BLOCK_OUT: Rating.PERFECT, COVERED: Rating.POOR,
+                  IN_PLAY: Rating.GOOD}[kind]
+        self.pending_attack = None
+        self.court.pop_last_trajectory()      # replace the primed arrow
+        self.court.add_trajectory(*final_traj, kind="attack",
+                                  block_touch=block_touch)
+        self._append(AttackEvent(team, attacker, rating, final_traj,
+                                 block_touch=block_touch))
+        self._auto_select_digger(final_traj)
+        return True
 
     def _begin_pending_attack(self, team: str, traj: tuple) -> None:
         if (self.candidate and self.candidate[0] == team):
@@ -579,7 +611,8 @@ class MainWindow(QMainWindow):
             if isinstance(e, ServeEvent) and e.trajectory:
                 self.court.add_trajectory(*e.trajectory, kind="serve")
             elif isinstance(e, AttackEvent) and e.trajectory:
-                self.court.add_trajectory(*e.trajectory, kind="attack")
+                self.court.add_trajectory(*e.trajectory, kind="attack",
+                                          block_touch=e.block_touch)
 
     # ------------------------------------------------------------- refresh
 
@@ -702,13 +735,15 @@ class MainWindow(QMainWindow):
                 chips, chip_rating = True, last.rating
         elif st.phase == Phase.ATTACK:
             if self.pending_attack:
-                prompt = "ATTACK: rate " + self._cand_txt() + " with ! - + #"
+                prompt = ("ATTACK: rate " + self._cand_txt() + " with ! - + #"
+                          + self._block_hint())
             else:
                 prompt = (f"ATTACK {self.teams[st.attacking_team].name}: "
                           "drag the attack trajectory (or tap the attacker)")
         elif st.phase == Phase.DEFENSE:
             if self.pending_attack:
-                prompt = "COUNTER-ATTACK: rate " + self._cand_txt()
+                prompt = ("COUNTER-ATTACK: rate " + self._cand_txt()
+                          + self._block_hint())
             else:
                 dteam = other(st.attacking_team)
                 prompt = (f"DEFENSE {self.teams[dteam].name}: rate the dig "
@@ -722,6 +757,16 @@ class MainWindow(QMainWindow):
         self.rating_bar.set_prompt(prompt)
         self.rating_bar.set_context(context)
         self.rating_bar.show_serve_chips(chips, chip_rating)
+
+    def _block_hint(self) -> str:
+        """When the primed attack ends by the net, remind the scouter the
+        second stroke logs a block deflection."""
+        if not self.pending_attack:
+            return ""
+        px = self.pending_attack[2][2]
+        if abs(px) <= BLOCK_NET_ZONE:
+            return " — blocked? drag from the block contact to where it went"
+        return ""
 
     def _cand_txt(self) -> str:
         if not self.candidate:

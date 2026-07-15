@@ -21,6 +21,8 @@ export interface TrajectoryStat {
   rating: Rating;
   set_number: number;
   line: Trajectory; // normalized: acting team plays LEFT -> RIGHT
+  // block deflection vertex (attacks only), normalized like `line`
+  block_touch?: [number, number] | null;
 }
 
 export interface TrajectoryFilter {
@@ -68,6 +70,7 @@ export function collect_trajectories(config: MatchConfig, teams: Record<TeamKey,
       // in the deciding set can trigger the mid-set side switch
       const side = engine.side_of(e.team);
       const skill = e.type === "serve" ? Skill.SERVE : Skill.ATTACK;
+      const touch = e.type === "attack" ? e.block_touch : null;
       out.push({
         team: e.team,
         player_id: e.player_id,
@@ -75,6 +78,7 @@ export function collect_trajectories(config: MatchConfig, teams: Record<TeamKey,
         rating: e.rating,
         set_number: engine.state.set_number,
         line: _normalize(e.trajectory, side),
+        block_touch: touch != null ? to_side(touch[0], touch[1], side) : null,
       });
     }
     engine.append(e);

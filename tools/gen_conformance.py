@@ -24,6 +24,8 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
+from core.blocks import (BLOCK_OUT, COVERED,                     # noqa: E402
+                         classify_block_deflection)
 from core.engine import MatchEngine, Phase                       # noqa: E402
 from core.events import (AttackEvent, DigEvent, LiberoSwapEvent,  # noqa: E402
                          ManualScoreEvent, RallyPointEvent,
@@ -129,7 +131,9 @@ def stats_to_dict(stats: dict) -> dict:
 def trajectories_to_list(trajs: list) -> list:
     return [{"team": t.team, "player_id": t.player_id,
              "skill": t.skill.value, "rating": t.rating.value,
-             "set_number": t.set_number, "line": list(t.line)}
+             "set_number": t.set_number, "line": list(t.line),
+             "block_touch": (list(t.block_touch)
+                             if t.block_touch is not None else None)}
             for t in trajs]
 
 
@@ -165,6 +169,21 @@ def pick_rating(rng: random.Random) -> Rating:
 def rand_traj(rng: random.Random):
     return (round(rng.uniform(-12, 12), 2), round(rng.uniform(-2, 11), 2),
             round(rng.uniform(-12, 12), 2), round(rng.uniform(-2, 11), 2))
+
+
+# rating a two-segment (blocked) attack gets from where the deflection lands,
+# mirroring the auto-finalize rule in both UIs
+BLOCK_RATINGS = {BLOCK_OUT: Rating.PERFECT, COVERED: Rating.POOR}
+
+
+def rand_blocked_attack(rng: random.Random, engine: MatchEngine,
+                        tk: str, pid: str) -> AttackEvent:
+    traj = rand_traj(rng)
+    touch = (round(rng.uniform(-0.8, 0.8), 2), round(rng.uniform(0, 9), 2))
+    kind = classify_block_deflection(engine.side_of(tk), traj[2], traj[3])
+    return AttackEvent(team=tk, player_id=pid,
+                       rating=BLOCK_RATINGS.get(kind, Rating.GOOD),
+                       trajectory=traj, block_touch=touch)
 
 
 def random_match(seed: int, config: MatchConfig,
@@ -261,10 +280,13 @@ def random_match(seed: int, config: MatchConfig,
         if ph == Phase.ATTACK:
             atk = st.attacking_team or st.serving_team
             tk = atk if rng.random() < 0.95 else other(atk)
-            emit(AttackEvent(
-                team=tk, player_id=rng.choice(st.team[tk].lineup),
-                rating=pick_rating(rng),
-                trajectory=rand_traj(rng) if rng.random() < 0.5 else None))
+            pid = rng.choice(st.team[tk].lineup)
+            if rng.random() < 0.25:    # attack touched by the block
+                emit(rand_blocked_attack(rng, engine, tk, pid))
+            else:
+                emit(AttackEvent(
+                    team=tk, player_id=pid, rating=pick_rating(rng),
+                    trajectory=rand_traj(rng) if rng.random() < 0.5 else None))
             continue
 
         if ph == Phase.DEFENSE:
@@ -355,6 +377,51 @@ def scripted_warnings() -> tuple[MatchConfig, dict, list]:
     return config, teams, ev
 
 
+def scripted_blocks() -> tuple[MatchConfig, dict, list]:
+    """Pins the blocked-attack semantics: block-out kill, covered ball
+    (cover dig by the attacking team, legal), covered ball with the dig
+    skipped, deflection staying on the blockers' side, and a kill block."""
+    config = MatchConfig()
+    teams = build_teams()
+    h = starters(teams, HOME)
+    a = starters(teams, AWAY)
+    ev: list = [first_set_start(teams)]                # HOME serves from LEFT
+
+    # rally 1: AWAY attack deflected out -> auto kill, point AWAY (side-out)
+    ev += [ServeEvent(team=HOME, player_id=h[0]),
+           ReceptionEvent(team=AWAY, player_id=a[0], rating=Rating.GOOD),
+           AttackEvent(team=AWAY, player_id=a[1], rating=Rating.PERFECT,
+                       trajectory=(5.0, 4.5, -2.0, 10.5),
+                       block_touch=(0.3, 4.5))]
+    # rally 2: HOME attack covered -> HOME digs its own ball, kills next
+    ev += [ServeEvent(team=AWAY, player_id=a[1]),
+           ReceptionEvent(team=HOME, player_id=h[0], rating=Rating.GOOD),
+           AttackEvent(team=HOME, player_id=h[1], rating=Rating.POOR,
+                       trajectory=(-5.0, 4.5, -3.0, 3.0),
+                       block_touch=(-0.2, 4.5)),
+           DigEvent(team=HOME, player_id=h[4], rating=Rating.GOOD),
+           AttackEvent(team=HOME, player_id=h[3], rating=Rating.PERFECT)]
+    # rally 3: AWAY attack tips off the block, stays on HOME side (in play),
+    # HOME digs and its counter-attack is kill-blocked ('!', one segment)
+    ev += [ServeEvent(team=HOME, player_id=h[1]),      # side-out rotated H
+           ReceptionEvent(team=AWAY, player_id=a[2], rating=Rating.GOOD),
+           AttackEvent(team=AWAY, player_id=a[3], rating=Rating.GOOD,
+                       trajectory=(4.0, 3.0, -4.0, 4.0),
+                       block_touch=(0.5, 3.0)),
+           DigEvent(team=HOME, player_id=h[5], rating=Rating.GOOD),
+           AttackEvent(team=HOME, player_id=h[2], rating=Rating.ERROR,
+                       trajectory=(-4.0, 4.5, -0.3, 4.5))]
+    # rally 4: covered ball, cover dig skipped -> implicit-dig attack
+    ev += [ServeEvent(team=AWAY, player_id=a[2]),      # side-out rotated A
+           ReceptionEvent(team=HOME, player_id=h[2], rating=Rating.GOOD),
+           AttackEvent(team=HOME, player_id=h[3], rating=Rating.POOR,
+                       trajectory=(-4.5, 5.0, -2.5, 6.0),
+                       block_touch=(-0.4, 5.0)),
+           AttackEvent(team=HOME, player_id=h[4], rating=Rating.GOOD,
+                       trajectory=(-3.0, 6.0, 6.0, 2.0))]
+    return config, teams, ev
+
+
 # -------------------------------------------------------------------- main
 
 def main() -> None:
@@ -367,6 +434,8 @@ def main() -> None:
     fixtures.append(run_fixture("scripted-corrections", cfg, teams, ev))
     cfg, teams, ev = scripted_warnings()
     fixtures.append(run_fixture("scripted-warnings", cfg, teams, ev))
+    cfg, teams, ev = scripted_blocks()
+    fixtures.append(run_fixture("scripted-blocks", cfg, teams, ev))
 
     variants = [
         ("default", MatchConfig(), (1, 2, 3)),

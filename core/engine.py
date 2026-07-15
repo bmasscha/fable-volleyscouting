@@ -17,6 +17,10 @@ Rule summary implemented here (see plan section 1):
 - manual corrections are ordinary events: score +/-, serve possession,
   rotation adjust (lineup rotation only -- never score or serve)
 - reception overpass: ball crosses straight back, serving team attacks
+- blocked attacks (AttackEvent.block_touch): a deflection landing back in
+  the attacker's own court keeps the rally alive with the ATTACKING team
+  playing the next (cover) dig; any other landing behaves like a normal
+  attack -- terminal ratings '#'/'!' award points exactly as always
 """
 from __future__ import annotations
 
@@ -24,6 +28,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from . import rules
+from .blocks import COVERED, classify_block_deflection
 from .events import (AttackEvent, DigEvent, Event, LiberoSwapEvent,
                      ManualScoreEvent, RallyPointEvent, ReceptionEvent,
                      RotationAdjustEvent, ServeEvent, ServeOverrideEvent,
@@ -282,13 +287,19 @@ class MatchEngine:
         elif st.attacking_team and e.team != st.attacking_team:
             w.append(f"attack charged to {self.teams[e.team].name} but "
                      f"{self.teams[st.attacking_team].name} has the ball")
-        if e.rating == Rating.PERFECT:                    # kill
+        if e.rating == Rating.PERFECT:                    # kill (incl. block-out)
             self._award_point(e.team)
         elif e.rating == Rating.ERROR:                    # out / net / blocked down
             self._award_point(other(e.team))
         else:
             st.phase = Phase.DEFENSE
-            st.attacking_team = e.team                    # ball travels to other side
+            returned = (e.block_touch is not None and e.trajectory is not None
+                        and classify_block_deflection(
+                            self.side_of(e.team),
+                            e.trajectory[2], e.trajectory[3]) == COVERED)
+            # a block deflection back into the attacker's court means the
+            # attacking team itself must cover (dig) the next ball
+            st.attacking_team = other(e.team) if returned else e.team
         return w
 
     def _on_dig(self, e: DigEvent) -> list[str]:

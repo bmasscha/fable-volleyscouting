@@ -296,21 +296,43 @@ export function CourtSurface({
 
         {/* recorded trajectories, newest fully opaque, older ones faded;
             after the rally they fade out entirely (undo snaps them back) */}
-        {trajectories.map(({ kind, trajectory, opacity }, index) => {
+        {trajectories.map(({ kind, trajectory, blockTouch, opacity }, index) => {
           const [x1, y1, x2, y2] = trajectory;
+          const color = kind === "serve" ? SERVE_ARROW : ATTACK_ARROW;
+          const style = {
+            opacity: trajectoriesExpired ? 0 : opacity,
+            transition: trajectoriesExpired ? ARROW_FADE : "none",
+          };
+          const key = `${kind}-${index}-${trajectory.join("-")}`;
+          if (blockTouch != null) {
+            // blocked attack: start -> vertex -> end, arrowhead on the
+            // final segment only, plus a dot at the block contact.
+            const [vx, vy] = blockTouch;
+            const d = `M ${x1} ${y1} L ${vx} ${vy} ${arrowPath(vx, vy, x2, y2)}`;
+            return (
+              <g key={key} style={style}>
+                <path
+                  d={d}
+                  fill="none"
+                  stroke={color}
+                  stroke-width={ARROW_WIDTH}
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <circle cx={vx} cy={vy} r={0.18} fill={color} />
+              </g>
+            );
+          }
           return (
             <path
-              key={`${kind}-${index}-${trajectory.join("-")}`}
+              key={key}
               d={arrowPath(x1, y1, x2, y2)}
               fill="none"
-              stroke={kind === "serve" ? SERVE_ARROW : ATTACK_ARROW}
+              stroke={color}
               stroke-width={ARROW_WIDTH}
               stroke-linecap="round"
               stroke-linejoin="round"
-              style={{
-                opacity: trajectoriesExpired ? 0 : opacity,
-                transition: trajectoriesExpired ? ARROW_FADE : "none",
-              }}
+              style={style}
             />
           );
         })}

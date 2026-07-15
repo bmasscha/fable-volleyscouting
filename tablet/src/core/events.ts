@@ -12,6 +12,8 @@ import { Rating, TeamKey } from "./models";
 
 // (x1, y1, x2, y2) in court metres; net at x=0, sidelines y=0 and y=9.
 export type Trajectory = [number, number, number, number];
+// (x, y) court metres of the block contact that deflected an attack.
+export type BlockTouch = [number, number];
 
 interface EventBase {
   // Wall-clock unix timestamp stamped by the UI when the event is entered.
@@ -46,12 +48,16 @@ export interface ReceptionEvent extends EventBase {
   overpass?: boolean;
 }
 
+/** `block_touch` set = the attack was deflected by the block: the drawn
+ * path is attacker -> block_touch -> trajectory end (the final landing).
+ * `trajectory` keeps meaning start -> landing either way. */
 export interface AttackEvent extends EventBase {
   type: "attack";
   team: TeamKey;
   player_id: string;
   rating: Rating;
   trajectory?: Trajectory | null;
+  block_touch?: BlockTouch | null;
 }
 
 export interface DigEvent extends EventBase {
@@ -132,6 +138,10 @@ function copy_traj(t: Trajectory | null | undefined): number[] | null {
   return t == null ? null : [t[0], t[1], t[2], t[3]];
 }
 
+function copy_touch(t: BlockTouch | null | undefined): number[] | null {
+  return t == null ? null : [t[0], t[1]];
+}
+
 /** Serialize with every field present (defaults filled in), matching the
  * dicts core/events.py::event_to_dict produces. */
 export function event_to_dict(e: MatchEvent): Record<string, unknown> {
@@ -161,6 +171,7 @@ export function event_to_dict(e: MatchEvent): Record<string, unknown> {
       d.player_id = e.player_id;
       d.rating = e.rating;
       d.trajectory = copy_traj(e.trajectory);
+      d.block_touch = copy_touch(e.block_touch);
       break;
     case "dig":
       d.team = e.team;
@@ -229,6 +240,8 @@ export function event_from_dict(d: any): MatchEvent {
         rating: d.rating,
         trajectory: d.trajectory == null ? null :
           [d.trajectory[0], d.trajectory[1], d.trajectory[2], d.trajectory[3]],
+        block_touch: d.block_touch == null ? null :
+          [d.block_touch[0], d.block_touch[1]],
       };
     case "dig":
       return {

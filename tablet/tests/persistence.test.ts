@@ -101,6 +101,7 @@ function all_event_samples(teams: Record<TeamKey, Team>): MatchEvent[] {
       player_id: a[1]!,
       rating: Rating.POOR,
       trajectory: [2.0, 1.0, -6.0, 8.0] as Trajectory,
+      block_touch: null,
     } satisfies AttackEvent,
     {
       type: "attack",
@@ -109,6 +110,7 @@ function all_event_samples(teams: Record<TeamKey, Team>): MatchEvent[] {
       player_id: a[1]!,
       rating: Rating.PERFECT,
       trajectory: null,
+      block_touch: null,
     } satisfies AttackEvent,
     { type: "dig", ts: null, team: HOME, player_id: h[5]!, rating: Rating.GOOD } satisfies DigEvent,
     { type: "rally_point", ts: null, team: AWAY, reason: "net fault" } satisfies RallyPointEvent,

@@ -126,6 +126,7 @@ describe.each(files)("conformance %s", (file) => {
       .map((t) => ({
         team: t.team, player_id: t.player_id, skill: t.skill,
         rating: t.rating, set_number: t.set_number, line: [...t.line],
+        block_touch: t.block_touch == null ? null : [...t.block_touch],
       }));
     expect(trajs).toEqual(fx.final_trajectories);
   });
