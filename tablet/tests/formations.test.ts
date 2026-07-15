@@ -1,8 +1,12 @@
 import { describe, expect, test } from "vitest";
 
-import { Mode, acting_setter_slot, formation_xy } from "../src/core/formations";
+import {
+  Mode, acting_setter_slot, formation_note, formation_xy,
+} from "../src/core/formations";
 import { Role } from "../src/core/models";
-import { LEFT, RIGHT, position_xy, serve_xy } from "../src/core/rotation";
+import {
+  BACK_ROW, LEFT, RIGHT, position_xy, rotate_clockwise, serve_xy,
+} from "../src/core/rotation";
 
 const S = Role.SETTER;
 const OH = Role.OUTSIDE;
@@ -166,6 +170,104 @@ describe("TestSetterIdentification", () => {
       roles[i] = U;
     }
     expect(acting_setter_slot(roles)).toBeNull();
+  });
+});
+
+describe("TestSixTwo", () => {
+  // S1@P1, OH1@P2, MB1@P3, S2@P4, OH2@P5, MB2@P6 -- setters diagonal
+  const LINEUP = ["S1", "OH1", "MB1", "S2", "OH2", "MB2"];
+  const ROLE: Record<string, Role> = {
+    S1: S, S2: S, OH1: OH, OH2: OH, MB1: MB, MB2: MB,
+  };
+
+  function rotations(): { lineup: string[]; roles: Record<number, Role> }[] {
+    const out = [];
+    let lineup = [...LINEUP];
+    for (let i = 0; i < 6; i++) {
+      const roles: Record<number, Role> = {};
+      lineup.forEach((p, idx) => { roles[idx] = ROLE[p]; });
+      out.push({ lineup: [...lineup], roles });
+      lineup = rotate_clockwise(lineup);
+    }
+    return out;
+  }
+
+  test("test_acting_setter_is_always_the_back_row_one", () => {
+    for (const { lineup, roles } of rotations()) {
+      const slot = acting_setter_slot(roles);
+      expect(slot, `grid fallback in ${lineup}`).not.toBeNull();
+      expect(BACK_ROW.includes(slot!)).toBe(true);
+      expect(ROLE[lineup[slot!]]).toBe(S);
+    }
+  });
+
+  test("test_both_setters_take_turns_setting", () => {
+    const acting = rotations().map(
+      ({ lineup, roles }) => lineup[acting_setter_slot(roles)!]);
+    expect(acting.filter((p) => p === "S1")).toHaveLength(3);
+    expect(acting.filter((p) => p === "S2")).toHaveLength(3);
+  });
+
+  test("test_front_row_setter_never_receives_and_attacks_right", () => {
+    for (const { lineup, roles } of rotations()) {
+      const slot = acting_setter_slot(roles)!;
+      const fs = lineup.findIndex((p, i) => ROLE[p] === S && i !== slot);
+      const rec = formation_xy(slot, Mode.RECEIVE, LEFT);
+      const off = formation_xy(slot, Mode.OFFENSE, LEFT);
+      expect(-rec[fs][0], `front setter passing in ${lineup}`).toBeLessThanOrEqual(2.0);
+      expect(off[fs][1], `front setter not right in ${lineup}`).toBeGreaterThan(4.5);
+    }
+  });
+
+  test("test_acting_setter_penetrates_to_the_net_to_set", () => {
+    for (const { roles } of rotations()) {
+      const slot = acting_setter_slot(roles)!;
+      const off = formation_xy(slot, Mode.OFFENSE, LEFT);
+      expect(-off[slot][0]).toBeLessThanOrEqual(2.0);
+      expect(off[slot][1]).toBeGreaterThan(4.5);
+    }
+  });
+
+  test("test_always_three_front_row_attackers", () => {
+    for (const { roles } of rotations()) {
+      expect([1, 2, 3]).not.toContain(acting_setter_slot(roles)!);
+    }
+  });
+
+  test("test_only_the_back_row_setter_charts_are_ever_used", () => {
+    const used = new Set(rotations().map(({ roles }) => acting_setter_slot(roles)));
+    expect([...used].sort()).toEqual([0, 4, 5]);
+  });
+});
+
+describe("TestFormationNote", () => {
+  test("test_no_note_for_a_valid_six_two", () => {
+    const roles: Record<number, Role> = { 0: S, 1: OH, 2: MB, 3: S, 4: OH, 5: MB };
+    expect(formation_note(roles)).toBeNull();
+  });
+
+  test("test_no_note_for_a_five_one", () => {
+    expect(formation_note(FIVE_ONE)).toBeNull();
+  });
+
+  test("test_note_when_both_setters_share_the_back_row", () => {
+    const roles: Record<number, Role> = { 0: S, 1: OH, 2: MB, 3: OH, 4: S, 5: L };
+    const note = formation_note(roles);
+    expect(note).not.toBeNull();
+    expect(note).toContain("diagonal");
+  });
+
+  test("test_note_when_both_setters_share_the_front_row", () => {
+    const roles: Record<number, Role> = { 0: OH, 1: S, 2: S, 3: OH, 4: MB, 5: L };
+    expect(formation_note(roles)).not.toBeNull();
+  });
+
+  test("test_no_note_without_a_setter", () => {
+    const roles: Record<number, Role> = {};
+    for (const i of ALL_SLOTS) {
+      roles[i] = U;
+    }
+    expect(formation_note(roles)).toBeNull();
   });
 });
 

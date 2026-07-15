@@ -4,9 +4,11 @@ import math
 
 import pytest
 
-from core.formations import Mode, acting_setter_slot, formation_xy
+from core.formations import (Mode, acting_setter_slot, formation_note,
+                             formation_xy)
 from core.models import Role
-from core.rotation import LEFT, RIGHT, position_xy, serve_xy
+from core.rotation import BACK_ROW, LEFT, RIGHT, position_xy, serve_xy
+from core.rotation import rotate_clockwise
 
 S, OH, MB, OPP, L, U = (Role.SETTER, Role.OUTSIDE, Role.MIDDLE,
                         Role.OPPOSITE, Role.LIBERO, Role.UNIVERSAL)
@@ -136,6 +138,91 @@ class TestSetterIdentification:
 
     def test_no_setter(self):
         assert acting_setter_slot({i: U for i in ALL_SLOTS}) is None
+
+
+class TestSixTwo:
+    """A 6-2 keeps its two setters diagonal, so exactly one is always in
+    the back row and runs the offence; the other is a right-side
+    attacker. The charts are keyed off the acting setter, so the whole
+    system falls out of the 5-1 logic -- these tests pin that."""
+
+    # S1@P1, OH1@P2, MB1@P3, S2@P4, OH2@P5, MB2@P6 -- setters diagonal
+    LINEUP = ["S1", "OH1", "MB1", "S2", "OH2", "MB2"]
+    ROLE = {"S1": S, "S2": S, "OH1": OH, "OH2": OH, "MB1": MB, "MB2": MB}
+
+    def rotations(self):
+        lineup = list(self.LINEUP)
+        for _ in range(6):
+            yield lineup, {i: self.ROLE[p] for i, p in enumerate(lineup)}
+            lineup = rotate_clockwise(lineup)
+
+    def test_acting_setter_is_always_the_back_row_one(self):
+        for lineup, roles in self.rotations():
+            slot = acting_setter_slot(roles)
+            assert slot is not None, f"grid fallback in {lineup}"
+            assert slot in BACK_ROW
+            assert self.ROLE[lineup[slot]] == S
+
+    def test_both_setters_take_turns_setting(self):
+        acting = [lineup[acting_setter_slot(roles)]
+                  for lineup, roles in self.rotations()]
+        # three rotations each, handover halfway -- never a stuck setter
+        assert acting.count("S1") == 3
+        assert acting.count("S2") == 3
+
+    def test_front_row_setter_never_receives_and_attacks_right(self):
+        for lineup, roles in self.rotations():
+            slot = acting_setter_slot(roles)
+            front_setter = next(p for i, p in enumerate(lineup)
+                                if self.ROLE[p] == S and i != slot)
+            fs = lineup.index(front_setter)
+            rec = formation_xy(slot, Mode.RECEIVE, LEFT)
+            off = formation_xy(slot, Mode.OFFENSE, LEFT)
+            # at the net in reception: out of the passing lanes
+            assert -rec[fs][0] <= 2.0, f"front setter passing in {lineup}"
+            # attacks from the right side (zone 2)
+            assert off[fs][1] > 4.5, f"front setter not right in {lineup}"
+
+    def test_acting_setter_penetrates_to_the_net_to_set(self):
+        for lineup, roles in self.rotations():
+            slot = acting_setter_slot(roles)
+            off = formation_xy(slot, Mode.OFFENSE, LEFT)
+            assert -off[slot][0] <= 2.0     # at the net
+            assert off[slot][1] > 4.5       # right of centre
+
+    def test_always_three_front_row_attackers(self):
+        for lineup, roles in self.rotations():
+            slot = acting_setter_slot(roles)
+            # the acting setter is back row, so all three front-row
+            # players are attackers (one of them the other setter)
+            assert slot not in (1, 2, 3)
+
+    def test_only_the_back_row_setter_charts_are_ever_used(self):
+        used = {acting_setter_slot(roles) for _, roles in self.rotations()}
+        assert used == {0, 4, 5}
+
+
+class TestFormationNote:
+    def test_no_note_for_a_valid_six_two(self):
+        roles = {0: S, 1: OH, 2: MB, 3: S, 4: OH, 5: MB}
+        assert formation_note(roles) is None
+
+    def test_no_note_for_a_five_one(self):
+        assert formation_note(FIVE_ONE) is None
+
+    def test_note_when_both_setters_share_the_back_row(self):
+        roles = {0: S, 1: OH, 2: MB, 3: OH, 4: S, 5: L}
+        note = formation_note(roles)
+        assert note is not None
+        assert "diagonal" in note
+
+    def test_note_when_both_setters_share_the_front_row(self):
+        roles = {0: OH, 1: S, 2: S, 3: OH, 4: MB, 5: L}
+        assert formation_note(roles) is not None
+
+    def test_no_note_without_a_setter(self):
+        # roles simply not entered: a supported fallback, not a mistake
+        assert formation_note({i: U for i in ALL_SLOTS}) is None
 
 
 class TestFallbacks:

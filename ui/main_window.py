@@ -31,7 +31,8 @@ from core import persistence, rotation
 from core.blocks import (BLOCK_GRAB_RADIUS, BLOCK_NET_ZONE, BLOCK_OUT, COVERED,
                          IN_PLAY, classify_block_deflection)
 from core.engine import MatchEngine, Phase
-from core.formations import Mode, acting_setter_slot, formation_xy
+from core.formations import (Mode, acting_setter_slot, formation_note,
+                             formation_xy)
 from core.events import (AttackEvent, DigEvent, LiberoSwapEvent,
                          ManualScoreEvent, RallyPointEvent, ReceptionEvent,
                          RotationAdjustEvent, ServeEvent, ServeOverrideEvent,
@@ -608,20 +609,33 @@ class MainWindow(QMainWindow):
                     else Mode.DEFENSE)
         return Mode.GRID
 
-    def _positions(self, team_key: str) -> dict[str, tuple[float, float]]:
-        """Displayed coordinates per on-court player. Used by both the
-        token rendering and the nearest-player auto-selection, so the
-        pick always agrees with what the scouter sees."""
-        st = self.engine.state
-        ts = st.team[team_key]
-        side = self.engine.side_of(team_key)
+    def _roles(self, team_key: str) -> dict[int, Role]:
+        """Role per lineup slot, with the libero exchange applied."""
+        ts = self.engine.state.team[team_key]
         roles = {}
         for idx, pid in enumerate(ts.lineup):
             p = self.teams[team_key].player(pid)
             roles[idx] = (Role.LIBERO if pid in ts.liberos
                           else p.role if p else Role.UNIVERSAL)
-        xy = formation_xy(acting_setter_slot(roles),
-                          self._team_mode(team_key), side)
+        return roles
+
+    def _acting_setter_id(self, team_key: str) -> str | None:
+        """The setter actually running the offence: in a 6-2 the back-row
+        one of the two (the other is hitting right side). None when no
+        setter is identifiable."""
+        slot = acting_setter_slot(self._roles(team_key))
+        if slot is None:
+            return None
+        return self.engine.state.team[team_key].lineup[slot]
+
+    def _positions(self, team_key: str) -> dict[str, tuple[float, float]]:
+        """Displayed coordinates per on-court player. Used by both the
+        token rendering and the nearest-player auto-selection, so the
+        pick always agrees with what the scouter sees."""
+        ts = self.engine.state.team[team_key]
+        xy = formation_xy(acting_setter_slot(self._roles(team_key)),
+                          self._team_mode(team_key),
+                          self.engine.side_of(team_key))
         return {pid: xy[idx] for idx, pid in enumerate(ts.lineup)}
 
     def _on_formations_toggled(self, checked: bool) -> None:
@@ -678,6 +692,7 @@ class MainWindow(QMainWindow):
             ts = st.team[tk]
             side = self.engine.side_of(tk)
             positions = self._positions(tk)
+            acting_setter = self._acting_setter_id(tk)
             for idx, pid in enumerate(ts.lineup):
                 p = self.teams[tk].player(pid)
                 if p is None:
@@ -689,7 +704,14 @@ class MainWindow(QMainWindow):
                 if pid in ts.liberos or p.role == Role.LIBERO:
                     color, badge = LIBERO_COLOR, "L"
                 elif p.role == Role.SETTER:
-                    color, badge = SETTER_COLOR, "S"
+                    # in a 6-2 only the back-row setter runs the offence;
+                    # the other one is hitting right side, so only the
+                    # acting one is painted as a setter. Ambiguous lineup
+                    # (no acting setter) -> mark both, we cannot tell.
+                    if acting_setter is None or pid == acting_setter:
+                        color, badge = SETTER_COLOR, "S"
+                    else:
+                        color, badge = self.teams[tk].color, "S"
                 else:
                     color, badge = self.teams[tk].color, ""
                 highlight = (self.candidate == (tk, pid))
@@ -753,6 +775,11 @@ class MainWindow(QMainWindow):
                                          self.teams[right].name)
 
         alerts = self.engine.pending_alerts()
+        if self.formations_enabled:
+            for tk in (HOME, AWAY):
+                note = formation_note(self._roles(tk))
+                if note:
+                    alerts.append(f"{self.teams[tk].name}: {note}")
         sp_info = self.engine.set_point_info()
         if sp_info:
             alerts.append(sp_info.upper())

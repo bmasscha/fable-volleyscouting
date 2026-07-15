@@ -48,6 +48,7 @@ import {
   rotateSetupLineup,
   sortTeams,
 } from "./setup";
+import { formation_note } from "./core/formations";
 import {
   CandidateSelection,
   PendingAttackState,
@@ -55,6 +56,7 @@ import {
   nearestPlayerId,
   recentCourtTrajectories,
   serveIsOut,
+  teamRoles,
   trajectoriesExpired,
 } from "./courtState";
 import {
@@ -1218,7 +1220,21 @@ export function App() {
   }, [session]);
 
   const currentWarnings = session?.lastWarnings ?? [];
-  const currentAlerts = engine?.pending_alerts() ?? [];
+  const currentAlerts = useMemo(() => {
+    if (engine == null) {
+      return [];
+    }
+    const alerts = engine.pending_alerts();
+    if (formationsEnabled) {
+      for (const teamKey of TEAM_KEYS) {
+        const note = formation_note(teamRoles(engine, teamKey));
+        if (note != null) {
+          alerts.push(`${engine.teams[teamKey].name}: ${note}`);
+        }
+      }
+    }
+    return alerts;
+  }, [engine, formationsEnabled]);
   const nextSet = engine?.suggest_next_set_start() ?? null;
   const servingTeam = engine?.state.serving_team ?? HOME;
   const receivingTeam = engine == null ? AWAY : other(engine.state.serving_team);

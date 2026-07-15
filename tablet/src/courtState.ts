@@ -58,14 +58,9 @@ export function teamMode(engine: MatchEngine, teamKey: TeamKey, formationsEnable
   return Mode.GRID;
 }
 
-export function displayedPositions(
-  engine: MatchEngine,
-  teamKey: TeamKey,
-  formationsEnabled: boolean,
-): Record<string, [number, number]> {
-  const state = engine.state;
-  const teamState = state.team[teamKey];
-  const side = engine.side_of(teamKey);
+/** Role per lineup slot, with the libero exchange applied. */
+export function teamRoles(engine: MatchEngine, teamKey: TeamKey): Record<number, Role> {
+  const teamState = engine.state.team[teamKey];
   const roles: Record<number, Role> = {};
 
   teamState.lineup.forEach((playerId, index) => {
@@ -75,7 +70,28 @@ export function displayedPositions(
       : player?.role ?? Role.UNIVERSAL;
   });
 
-  const xy = formation_xy(acting_setter_slot(roles), teamMode(engine, teamKey, formationsEnabled), side);
+  return roles;
+}
+
+/** The setter actually running the offence: in a 6-2 the back-row one of
+ * the two (the other is hitting right side). null when no setter is
+ * identifiable. */
+export function actingSetterId(engine: MatchEngine, teamKey: TeamKey): string | null {
+  const slot = acting_setter_slot(teamRoles(engine, teamKey));
+  return slot === null ? null : engine.state.team[teamKey].lineup[slot] ?? null;
+}
+
+export function displayedPositions(
+  engine: MatchEngine,
+  teamKey: TeamKey,
+  formationsEnabled: boolean,
+): Record<string, [number, number]> {
+  const teamState = engine.state.team[teamKey];
+  const xy = formation_xy(
+    acting_setter_slot(teamRoles(engine, teamKey)),
+    teamMode(engine, teamKey, formationsEnabled),
+    engine.side_of(teamKey),
+  );
   return Object.fromEntries(teamState.lineup.map((playerId, index) => [playerId, xy[index]]));
 }
 
@@ -114,6 +130,7 @@ export function buildCourtTokens(
     const team = engine.teams[teamKey];
     const teamState = state.team[teamKey];
     const positions = displayedPositions(engine, teamKey, formationsEnabled);
+    const acting = actingSetterId(engine, teamKey);
 
     teamState.lineup.forEach((playerId, index) => {
       const player = team_player(team, playerId);
@@ -122,13 +139,17 @@ export function buildCourtTokens(
       }
       const isLibero = teamState.liberos.includes(playerId) || player.role === Role.LIBERO;
       const isSetter = player.role === Role.SETTER;
+      // in a 6-2 only the back-row setter runs the offence; the other one
+      // is hitting right side, so only the acting one is painted as a
+      // setter. Ambiguous lineup (no acting setter) -> mark both.
+      const isActingSetter = isSetter && (acting === null || playerId === acting);
       const roleLabel = player.role.charAt(0).toUpperCase() + player.role.slice(1);
       tokens.push({
         teamKey,
         playerId,
         number: player.number,
         name: showRolesEnabled ? roleLabel : player.name,
-        color: isLibero ? LIBERO_TOKEN_COLOR : isSetter ? SETTER_TOKEN_COLOR : team.color,
+        color: isLibero ? LIBERO_TOKEN_COLOR : isActingSetter ? SETTER_TOKEN_COLOR : team.color,
         badge: isLibero ? "L" : isSetter ? "S" : "",
         x: positions[playerId]![0],
         y: positions[playerId]![1],

@@ -49,6 +49,24 @@ def acting_setter_slot(roles: dict[int, Role]) -> int | None:
     return None
 
 
+def formation_note(roles: dict[int, Role]) -> str | None:
+    """Why the realistic charts are unavailable, for the UIs to show, or
+    None while they are in use.
+
+    Only a real misconfiguration is reported: two or more setters on
+    court without exactly one of them in the back row. A 6-2 keeps its
+    setters diagonal (3 apart), so exactly one is always back row and
+    the acting one is decidable; setters sharing a row make it
+    ambiguous. No setter at all is a supported fallback (roles simply
+    were not entered), not a mistake -- it is never flagged."""
+    if acting_setter_slot(roles) is not None:
+        return None
+    if len([i for i, r in roles.items() if r == Role.SETTER]) >= 2:
+        return ("setters in the same row - a 6-2 needs them diagonal "
+                "(3 apart); showing the rotational grid")
+    return None
+
+
 # --- serve receive, keyed by the setter's slot -------------------------
 # Six classic 5-1 reception charts: three passers (both outside hitters
 # + the libero in the back-row middle slot) in a passing line ~6.5 m off

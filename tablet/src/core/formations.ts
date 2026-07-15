@@ -50,6 +50,27 @@ export function acting_setter_slot(roles: Record<number, Role>): number | null {
   return null;
 }
 
+/** Why the realistic charts are unavailable, for the UIs to show, or
+ * null while they are in use.
+ *
+ * Only a real misconfiguration is reported: two or more setters on
+ * court without exactly one of them in the back row. A 6-2 keeps its
+ * setters diagonal (3 apart), so exactly one is always back row and
+ * the acting one is decidable; setters sharing a row make it
+ * ambiguous. No setter at all is a supported fallback (roles simply
+ * were not entered), not a mistake -- it is never flagged. */
+export function formation_note(roles: Record<number, Role>): string | null {
+  if (acting_setter_slot(roles) !== null) {
+    return null;
+  }
+  const setters = Object.values(roles).filter((r) => r === Role.SETTER);
+  if (setters.length >= 2) {
+    return "setters in the same row - a 6-2 needs them diagonal "
+      + "(3 apart); showing the rotational grid";
+  }
+  return null;
+}
+
 // --- serve receive, keyed by the setter's slot -------------------------
 // Six classic 5-1 reception charts: three passers (both outside hitters
 // + the libero in the back-row middle slot) in a passing line ~6.5 m off
