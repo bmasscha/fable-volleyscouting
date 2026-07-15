@@ -486,6 +486,49 @@ def scripted_libero() -> tuple[MatchConfig, dict, list]:
     return config, teams, ev
 
 
+def scripted_unregistered_libero() -> tuple[MatchConfig, dict, list]:
+    """Pins adopting a libero the scouter never designated: HOME starts the
+    set with no libero registered, so the first exchange registers the
+    roster libero (warning, no substitution spent) and the automatic cycle
+    then runs exactly as it would have had they been designated up front."""
+    config = MatchConfig()
+    teams = build_teams()
+    lib = libero_of(teams, HOME)
+    engine = MatchEngine(config, teams)
+    ev: list = []
+
+    def emit(e) -> None:
+        engine.append(e)
+        ev.append(e)
+        drain_auto_swaps(engine, ev)
+
+    def home_wins_receiving() -> None:      # side-out: HOME rotates
+        lineup = engine.state.team[HOME].lineup
+        emit(ServeEvent(team=AWAY, player_id=engine.expected_server()))
+        emit(ReceptionEvent(team=HOME, player_id=lineup[5],
+                            rating=Rating.GOOD))
+        emit(AttackEvent(team=HOME, player_id=lineup[1],
+                         rating=Rating.PERFECT))
+
+    def home_loses_serving() -> None:       # AWAY point: HOME receives next
+        emit(ServeEvent(team=HOME, player_id=engine.expected_server(),
+                        rating=Rating.ERROR))
+
+    emit(SetStartEvent(
+        set_number=1,
+        lineups={tk: starters(teams, tk) for tk in (HOME, AWAY)},
+        liberos={HOME: [], AWAY: [libero_of(teams, AWAY)]},   # HOME: none
+        serving_team=AWAY, left_team=HOME))
+    # the tap that designates: registers H12 and exchanges, no sub spent
+    emit(LiberoSwapEvent(team=HOME, libero_id=lib, partner_id="H5"))
+    home_wins_receiving()    # rotation puts the libero at P4 -> forced exit
+    home_loses_serving()     # no partner in the back row -> no blind entry
+    home_wins_receiving()    # middle H3 rotates to P1 and must serve first
+    home_loses_serving()     # serve-receive: back-row middle H3 -> fallback
+    home_wins_receiving()    # libero rides along to P6 (back row, stays)
+    return config, teams, ev
+
+
 # -------------------------------------------------------------------- main
 
 def main() -> None:
@@ -502,6 +545,8 @@ def main() -> None:
     fixtures.append(run_fixture("scripted-blocks", cfg, teams, ev))
     cfg, teams, ev = scripted_libero()
     fixtures.append(run_fixture("scripted-libero", cfg, teams, ev))
+    cfg, teams, ev = scripted_unregistered_libero()
+    fixtures.append(run_fixture("scripted-unregistered-libero", cfg, teams, ev))
 
     variants = [
         ("default", MatchConfig(), (1, 2, 3)),

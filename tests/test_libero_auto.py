@@ -198,6 +198,78 @@ def test_pairing_memory_resets_next_set(teams):
     assert eng.next_auto_libero_swap() is None    # first entry manual again
 
 
+# ------------------------------------- adopting an unregistered role libero
+
+
+@pytest.fixture
+def role_libero_teams(teams):
+    """Roster player 7 really is a libero -- but the scouter never
+    designated them for the set (set_start_event(with_liberos=False))."""
+    teams[HOME].players[6].role = Role.LIBERO
+    return teams
+
+
+@pytest.fixture
+def unregistered(role_libero_teams):
+    eng = MatchEngine(MatchConfig(), role_libero_teams)
+    eng.append(set_start_event(role_libero_teams, serving=AWAY, left=HOME,
+                               with_liberos=False))
+    return eng
+
+
+def test_exchange_registers_the_libero_instead_of_burning_a_sub(
+        unregistered, role_libero_teams):
+    w = unregistered.append(LiberoSwapEvent(
+        team=HOME, libero_id=lib_id(role_libero_teams),
+        partner_id=hid(role_libero_teams, 4)))
+    ts = unregistered.state.team[HOME]
+    assert w == ["#7 was not registered as libero for this set "
+                 "-- registered now"]
+    assert ts.liberos == [lib_id(role_libero_teams)]
+    assert ts.subs_used == 0                      # the whole point
+    assert ts.sub_pairs == []
+    assert ts.lineup[4] == lib_id(role_libero_teams)
+
+
+def test_adopted_libero_drives_the_automatic_exchange(
+        unregistered, role_libero_teams):
+    enter_libero(unregistered, role_libero_teams)
+    unregistered.append(RallyPointEvent(team=HOME))   # side-out: libero -> P4
+    e = unregistered.next_auto_libero_swap()
+    assert e is not None and e.auto
+    assert e.libero_id == lib_id(role_libero_teams)
+    assert e.partner_id == hid(role_libero_teams, 4)
+
+
+def test_player_without_the_libero_role_still_warns_unregistered(unregistered,
+                                                                 role_libero_teams):
+    w = unregistered.append(LiberoSwapEvent(
+        team=HOME, libero_id=hid(role_libero_teams, 7),   # H8, universal
+        partner_id=hid(role_libero_teams, 4)))
+    assert w == ["player is not registered as libero"]
+    assert unregistered.state.team[HOME].liberos == []
+
+
+def test_registration_is_reproduced_by_replay(unregistered, role_libero_teams):
+    enter_libero(unregistered, role_libero_teams)
+    unregistered.append(RallyPointEvent(team=HOME))
+    registered = list(unregistered.state.team[HOME].liberos)
+    unregistered.undo()                            # replays from set_start
+    unregistered.append(RallyPointEvent(team=HOME))
+    assert unregistered.state.team[HOME].liberos == registered
+
+
+def test_registration_carries_into_the_next_set(role_libero_teams):
+    eng = MatchEngine(MatchConfig(points_per_set=1, min_lead=1),
+                      role_libero_teams)
+    eng.append(set_start_event(role_libero_teams, serving=AWAY, left=HOME,
+                               with_liberos=False))
+    enter_libero(eng, role_libero_teams)
+    eng.append(RallyPointEvent(team=HOME))         # 1-0: set over
+    assert eng.suggest_next_set_start().liberos[HOME] == [
+        lib_id(role_libero_teams)]
+
+
 # ------------------------------------------------------------ serialization
 
 

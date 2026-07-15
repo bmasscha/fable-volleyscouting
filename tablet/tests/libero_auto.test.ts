@@ -21,14 +21,15 @@ function make_teams(): Record<TeamKey, Team> {
   // h3 and h5 are the middles the libero exchanges with; h7 is the libero
   const roles: Record<number, Role> = { 3: Role.MIDDLE, 5: Role.MIDDLE, 7: Role.LIBERO };
   return {
-    home: make_team("Home", [1, 2, 3, 4, 5, 6, 7].map(
+    home: make_team("Home", [1, 2, 3, 4, 5, 6, 7, 8].map(
       (i) => make_player(i, `H${i}`, roles[i] ?? Role.UNIVERSAL, `h${i}`))),
     away: make_team("Away", [1, 2, 3, 4, 5, 6, 7].map(
       (i) => make_player(i + 50, `A${i}`, i === 7 ? Role.LIBERO : Role.UNIVERSAL, `a${i}`))),
   };
 }
 
-function set_start_event(serving: TeamKey = AWAY, left: TeamKey = HOME) {
+function set_start_event(serving: TeamKey = AWAY, left: TeamKey = HOME,
+                         with_liberos = true) {
   return {
     type: "set_start" as const,
     set_number: 1,
@@ -36,7 +37,9 @@ function set_start_event(serving: TeamKey = AWAY, left: TeamKey = HOME) {
       home: ["h1", "h2", "h3", "h4", "h5", "h6"],
       away: ["a1", "a2", "a3", "a4", "a5", "a6"],
     },
-    liberos: { home: [LIB], away: ["a7"] },
+    liberos: with_liberos
+      ? { home: [LIB], away: ["a7"] }
+      : { home: [] as string[], away: [] as string[] },
     serving_team: serving,
     left_team: left,
   };
@@ -228,6 +231,72 @@ describe("re-entry", () => {
     engine.append(engine.suggest_next_set_start()!);
     expect(engine.state.team[HOME].libero_partners).toEqual({});
     expect(engine.next_auto_libero_swap()).toBeNull(); // first entry manual again
+  });
+});
+
+// ------------------------------------- adopting an unregistered role libero
+
+describe("adopting an unregistered role libero", () => {
+  /** h7 really is a libero by roster role, but the scouter never
+   * designated them for the set. */
+  function unregistered(config?: MatchConfig): MatchEngine {
+    const engine = new MatchEngine(config ?? default_config(), make_teams());
+    engine.append(set_start_event(AWAY, HOME, false));
+    return engine;
+  }
+
+  test("exchange registers the libero instead of burning a sub", () => {
+    const engine = unregistered();
+    const w = engine.append({
+      type: "libero_swap", team: HOME, libero_id: LIB, partner_id: "h5",
+    });
+    const ts = engine.state.team[HOME];
+    expect(w).toEqual([
+      "#7 was not registered as libero for this set -- registered now",
+    ]);
+    expect(ts.liberos).toEqual([LIB]);
+    expect(ts.subs_used).toBe(0); // the whole point
+    expect(ts.sub_pairs).toEqual([]);
+    expect(ts.lineup[4]).toBe(LIB);
+  });
+
+  test("adopted libero drives the automatic exchange", () => {
+    const engine = unregistered();
+    enter_libero(engine);
+    rally_point(engine, HOME); // side-out: libero -> P4
+    const e = engine.next_auto_libero_swap();
+    expect(e).not.toBeNull();
+    expect(e!.auto).toBe(true);
+    expect(e!.libero_id).toBe(LIB);
+    expect(e!.partner_id).toBe("h5");
+  });
+
+  test("player without the libero role still warns unregistered", () => {
+    const engine = unregistered();
+    const w = engine.append({
+      type: "libero_swap", team: HOME, libero_id: "h8", partner_id: "h5",
+    });
+    expect(w).toEqual(["player is not registered as libero"]);
+    expect(engine.state.team[HOME].liberos).toEqual([]);
+  });
+
+  test("registration is reproduced by replay", () => {
+    const engine = unregistered();
+    enter_libero(engine);
+    rally_point(engine, HOME);
+    const registered = [...engine.state.team[HOME].liberos];
+    engine.undo(); // replays from set_start
+    rally_point(engine, HOME);
+    expect(engine.state.team[HOME].liberos).toEqual(registered);
+  });
+
+  test("registration carries into the next set", () => {
+    const engine = unregistered({
+      ...default_config(), points_per_set: 1, min_lead: 1,
+    });
+    enter_libero(engine);
+    rally_point(engine, HOME); // 1-0: set over
+    expect(engine.suggest_next_set_start()!.liberos[HOME]).toEqual([LIB]);
   });
 });
 

@@ -496,7 +496,17 @@ export class MatchEngine {
       w.push("libero exchange during a live rally");
     }
     if (!ts.liberos.includes(e.libero_id)) {
-      w.push("player is not registered as libero");
+      // a libero the scouter never designated: adopt them rather than
+      // let the UIs record a substitution and silently spend one of the
+      // 6 -- the tap itself is the designation
+      const p = team_player(this.teams[e.team], e.libero_id);
+      if (p != null && p.role === Role.LIBERO) {
+        ts.liberos.push(e.libero_id);
+        w.push(`#${p.number} was not registered as libero `
+          + `for this set -- registered now`);
+      } else {
+        w.push("player is not registered as libero");
+      }
     }
     if (ts.lineup.includes(e.libero_id)) { // libero exits
       const recorded = ts.libero_replaced[e.libero_id] ?? e.partner_id;

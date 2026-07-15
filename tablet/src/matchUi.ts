@@ -56,7 +56,14 @@ export function exchangeEventFor(
   courtPlayerId: string,
 ): LiberoSwapEvent | SubstitutionEvent {
   const teamState = engine.state.team[teamKey];
-  if (teamState.liberos.includes(benchPlayerId)) {
+  /** Registered for this set, or a libero by roster role -- the engine
+   * adopts the latter instead of burning a substitution. */
+  const isLibero = (playerId: string): boolean => {
+    const player = team_player(engine.teams[teamKey], playerId);
+    return teamState.liberos.includes(playerId)
+      || (player != null && player.role === Role.LIBERO);
+  };
+  if (isLibero(benchPlayerId)) {
     return {
       type: "libero_swap",
       team: teamKey,
@@ -64,7 +71,7 @@ export function exchangeEventFor(
       partner_id: courtPlayerId,
     };
   }
-  if (teamState.liberos.includes(courtPlayerId)) {
+  if (isLibero(courtPlayerId)) {
     return {
       type: "libero_swap",
       team: teamKey,

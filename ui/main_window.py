@@ -454,10 +454,18 @@ class MainWindow(QMainWindow):
         bench_pid = self.armed_bench[1]
         self.armed_bench = None
         ts = self.engine.state.team[team_key]
-        if bench_pid in ts.liberos:
+
+        def is_libero(pid: str) -> bool:
+            """Registered for this set, or a libero by roster role -- the
+            engine adopts the latter instead of burning a substitution."""
+            p = self.teams[team_key].player(pid)
+            return pid in ts.liberos or (p is not None
+                                         and p.role == Role.LIBERO)
+
+        if is_libero(bench_pid):
             ev = LiberoSwapEvent(team_key, libero_id=bench_pid,
                                  partner_id=court_pid)
-        elif court_pid in ts.liberos:
+        elif is_libero(court_pid):
             ev = LiberoSwapEvent(team_key, libero_id=court_pid,
                                  partner_id=bench_pid)
         else:

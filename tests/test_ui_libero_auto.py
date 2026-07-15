@@ -97,6 +97,32 @@ def test_single_undo_removes_auto_group(app):
     win.close()
 
 
+def test_bench_tap_of_a_role_libero_is_an_exchange_not_a_substitution(app):
+    """The scouter never designated the libero in setup: arming them off
+    the bench must still route to a libero exchange, so the engine adopts
+    them instead of silently spending one of the 6 substitutions."""
+    teams = make_teams()
+    teams[HOME].players[6].role = Role.LIBERO      # a libero by roster role
+    win = MainWindow()
+    win.teams = teams
+    win.config = MatchConfig()
+    win.engine = MatchEngine(win.config, teams)
+    win.engine.append(set_start_event(teams, serving=AWAY, left=HOME,
+                                      with_liberos=False))   # not registered
+    win.refresh()
+
+    win.on_bench_tapped(HOME, lib_id(win))         # arm the libero
+    win.on_player_tapped(HOME, hid(win, 4))        # tap H5 at P5
+
+    ev = win.engine.events[-1]
+    assert isinstance(ev, LiberoSwapEvent)
+    ts = win.engine.state.team[HOME]
+    assert ts.subs_used == 0
+    assert ts.liberos == [lib_id(win)]
+    assert ts.lineup[4] == lib_id(win)
+    win.close()
+
+
 def test_auto_libero_disabled_stays_manual(app):
     win = make_window(app, config=MatchConfig(auto_libero=False))
     enter_libero(win)

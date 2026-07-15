@@ -84,6 +84,37 @@ describe("match UI helpers", () => {
     });
   });
 
+  test("routes a libero the scouter never registered to an exchange", () => {
+    // no liberos designated in setup: h7 is a libero by roster role only.
+    // Routing this to a substitution would silently spend one of the 6.
+    const engine = new MatchEngine(default_config(), makeEngine().teams);
+    engine.append({
+      type: "set_start",
+      set_number: 1,
+      lineups: {
+        home: ["h1", "h2", "h3", "h4", "h5", "h6"],
+        away: ["a1", "a2", "a3", "a4", "a5", "a6"],
+      },
+      liberos: { home: [], away: [] },
+      serving_team: HOME,
+      left_team: HOME,
+    });
+
+    expect(exchangeEventFor(engine, HOME, "h7", "h5")).toEqual({
+      type: "libero_swap",
+      team: HOME,
+      libero_id: "h7",
+      partner_id: "h5",
+    });
+    // a plain bench player is still an ordinary substitution
+    expect(exchangeEventFor(engine, HOME, "h8", "h2")).toEqual({
+      type: "substitution",
+      team: HOME,
+      player_out: "h2",
+      player_in: "h8",
+    });
+  });
+
   test("rotates and validates edited next-set lineups", () => {
     const draft = cloneSetStartEvent({
       type: "set_start",

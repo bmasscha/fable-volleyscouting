@@ -402,7 +402,16 @@ class MatchEngine:
         if self.rally_live():
             w.append("libero exchange during a live rally")
         if e.libero_id not in ts.liberos:
-            w.append("player is not registered as libero")
+            # a libero the scouter never designated: adopt them rather than
+            # let the UIs record a substitution and silently spend one of the
+            # 6 -- the tap itself is the designation
+            p = self.teams[e.team].player(e.libero_id)
+            if p is not None and p.role == Role.LIBERO:
+                ts.liberos.append(e.libero_id)
+                w.append(f"#{p.number} was not registered as libero "
+                         f"for this set -- registered now")
+            else:
+                w.append("player is not registered as libero")
         if e.libero_id in ts.lineup:                      # libero exits
             recorded = ts.libero_replaced.get(e.libero_id, e.partner_id)
             w += rules.validate_libero_exit(recorded, e.partner_id)
