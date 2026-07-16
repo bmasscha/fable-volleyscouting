@@ -1268,8 +1268,8 @@ export function App() {
     engine == null || pendingAttack == null ? [] : playerOptions(engine, pendingAttack.teamKey)
   ), [engine, pendingAttack]);
   const courtTokens = useMemo(() => (
-    engine == null ? [] : buildCourtTokens(engine, candidate, formationsEnabled, showRolesEnabled)
-  ), [candidate, engine, formationsEnabled, showRolesEnabled]);
+    engine == null ? [] : buildCourtTokens(engine, candidate, formationsEnabled, showRolesEnabled, pendingAttack)
+  ), [candidate, engine, formationsEnabled, showRolesEnabled, pendingAttack]);
   const recentTrajectories = useMemo(() => {
     if (session == null) {
       return [];
@@ -1671,20 +1671,10 @@ export function App() {
         Number(x2.toFixed(2)), Number(y2.toFixed(2)),
       ];
       if (preview != null && preview.state.phase === Phase.DEFENSE) {
-        // a GOOD attack in play hands the ball to the other team; this drag is
-        // their counter-attack (implicit unrated dig). Default the attacker to
-        // the digger nearest where the ball landed, as a tapped '+' would.
-        const teamKey = other(preview.state.attacking_team!);
-        const digger = nearestPlayerId(
-          preview, teamKey, finished.trajectory[2], finished.trajectory[3], formationsEnabled,
-        ) ?? preview.state.team[teamKey].lineup[5] ?? preview.state.team[teamKey].lineup[0] ?? null;
-        if (digger != null) {
-          setCandidate({ teamKey, playerId: digger });
-          setPendingAttack({ teamKey, playerId: digger, trajectory: newTrajectory });
-          setAttackPlayer(digger);
-        } else {
-          setCandidate(null);
-        }
+        // a GOOD attack in play hands the ball to the other team; this drag
+        // is their counter-attack. Its attacker is whoever the line starts
+        // from (nearest the drag origin), not the digger by the landing.
+        primePendingAttack(preview, other(preview.state.attacking_team!), newTrajectory);
       } else {
         setCandidate(null);
       }

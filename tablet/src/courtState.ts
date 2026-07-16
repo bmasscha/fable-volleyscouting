@@ -41,7 +41,12 @@ export const SETTER_TOKEN_COLOR = "#1565c0";
 export const LIBERO_TOKEN_COLOR = "#c62828";
 export const OUT_TOLERANCE = 0.4;
 
-export function teamMode(engine: MatchEngine, teamKey: TeamKey, formationsEnabled: boolean): Mode {
+export function teamMode(
+  engine: MatchEngine,
+  teamKey: TeamKey,
+  formationsEnabled: boolean,
+  attackingOverride: TeamKey | null = null,
+): Mode {
   const state = engine.state;
   if (!formationsEnabled) {
     return Mode.GRID;
@@ -53,7 +58,13 @@ export function teamMode(engine: MatchEngine, teamKey: TeamKey, formationsEnable
     return teamKey === state.serving_team ? Mode.DEFENSE : Mode.RECEIVE;
   }
   if (state.phase === Phase.ATTACK || state.phase === Phase.DEFENSE) {
-    return teamKey === state.attacking_team ? Mode.OFFENSE : Mode.DEFENSE;
+    // A drawn-but-unrated attack hasn't reached the engine yet, so its team
+    // isn't state.attacking_team. When the caller passes the pending
+    // attacker's team as the override, treat it as the offence so the
+    // formations flip the moment the (counter-)attack is drawn, not only
+    // once it's scored.
+    const attacking = attackingOverride ?? state.attacking_team;
+    return teamKey === attacking ? Mode.OFFENSE : Mode.DEFENSE;
   }
   return Mode.GRID;
 }
@@ -85,11 +96,12 @@ export function displayedPositions(
   engine: MatchEngine,
   teamKey: TeamKey,
   formationsEnabled: boolean,
+  attackingOverride: TeamKey | null = null,
 ): Record<string, [number, number]> {
   const teamState = engine.state.team[teamKey];
   const xy = formation_xy(
     acting_setter_slot(teamRoles(engine, teamKey)),
-    teamMode(engine, teamKey, formationsEnabled),
+    teamMode(engine, teamKey, formationsEnabled, attackingOverride),
     engine.side_of(teamKey),
   );
   return Object.fromEntries(teamState.lineup.map((playerId, index) => [playerId, xy[index]]));
@@ -122,14 +134,18 @@ export function buildCourtTokens(
   selected: CandidateSelection | null,
   formationsEnabled: boolean,
   showRolesEnabled = false,
+  pendingAttack: PendingAttackState | null = null,
 ): CourtTokenSpec[] {
   const state = engine.state;
   const tokens: CourtTokenSpec[] = [];
+  // a pending (drawn but unscored) attack is the acting offence, even though
+  // the engine still credits the ball to the previous attacker
+  const attackingOverride = pendingAttack?.teamKey ?? null;
 
   TEAM_KEYS.forEach((teamKey) => {
     const team = engine.teams[teamKey];
     const teamState = state.team[teamKey];
-    const positions = displayedPositions(engine, teamKey, formationsEnabled);
+    const positions = displayedPositions(engine, teamKey, formationsEnabled, attackingOverride);
     const acting = actingSetterId(engine, teamKey);
 
     teamState.lineup.forEach((playerId, index) => {
