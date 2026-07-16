@@ -1652,7 +1652,43 @@ export function App() {
         }
         return;
       }
-      // not a deflection: fall through -- the drag replaces the pending attack
+
+      // Not a deflection: the scouter drew the next attack without scoring the
+      // previous one. Finalize it with the default '+' (in play) so a fast
+      // rally can be charted continuously, then let this drag start the next
+      // (counter-)attack -- mirroring a tapped '+' followed by a fresh drag.
+      const finished = pendingAttack;
+      const preview = appendEvent({
+        type: "attack",
+        team: finished.teamKey,
+        player_id: finished.playerId,
+        rating: Rating.GOOD,
+        trajectory: finished.trajectory,
+      });
+      setPendingAttack(null);
+      const newTrajectory: [number, number, number, number] = [
+        Number(x1.toFixed(2)), Number(y1.toFixed(2)),
+        Number(x2.toFixed(2)), Number(y2.toFixed(2)),
+      ];
+      if (preview != null && preview.state.phase === Phase.DEFENSE) {
+        // a GOOD attack in play hands the ball to the other team; this drag is
+        // their counter-attack (implicit unrated dig). Default the attacker to
+        // the digger nearest where the ball landed, as a tapped '+' would.
+        const teamKey = other(preview.state.attacking_team!);
+        const digger = nearestPlayerId(
+          preview, teamKey, finished.trajectory[2], finished.trajectory[3], formationsEnabled,
+        ) ?? preview.state.team[teamKey].lineup[5] ?? preview.state.team[teamKey].lineup[0] ?? null;
+        if (digger != null) {
+          setCandidate({ teamKey, playerId: digger });
+          setPendingAttack({ teamKey, playerId: digger, trajectory: newTrajectory });
+          setAttackPlayer(digger);
+        } else {
+          setCandidate(null);
+        }
+      } else {
+        setCandidate(null);
+      }
+      return;
     }
 
     const trajectory: [number, number, number, number] = [
