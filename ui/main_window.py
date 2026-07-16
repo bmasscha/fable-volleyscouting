@@ -287,6 +287,9 @@ class MainWindow(QMainWindow):
             # attack. A GOOD attack sends the engine to DEFENSE, so the branch
             # below primes the counter-attack for the other team.
             self._finalize_pending_attack(Rating.GOOD)
+            # the counter-attacker is whoever the new drag starts from, not the
+            # digger _finalize_pending_attack just preselected by the landing
+            self.candidate = None
             st = self.engine.state
         if st.phase == Phase.AWAIT_SERVE:
             team = st.serving_team
@@ -627,7 +630,13 @@ class MainWindow(QMainWindow):
             return (Mode.DEFENSE if team_key == st.serving_team
                     else Mode.RECEIVE)
         if st.phase in (Phase.ATTACK, Phase.DEFENSE):
-            return (Mode.OFFENSE if team_key == st.attacking_team
+            # a drawn-but-unrated attack is the acting offence even though the
+            # engine still credits the ball to the previous attacker, so the
+            # formations flip the moment the (counter-)attack is drawn rather
+            # than only when it is scored
+            attacking = (self.pending_attack[0] if self.pending_attack
+                         else st.attacking_team)
+            return (Mode.OFFENSE if team_key == attacking
                     else Mode.DEFENSE)
         return Mode.GRID
 

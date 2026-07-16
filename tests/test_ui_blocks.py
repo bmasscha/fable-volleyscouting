@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import QApplication          # noqa: E402
 from core.blocks import BLOCK_NET_ZONE            # noqa: E402
 from core.engine import MatchEngine, Phase        # noqa: E402
 from core.events import AttackEvent, ReceptionEvent, ServeEvent  # noqa: E402
+from core.formations import Mode                   # noqa: E402
 from core.models import AWAY, HOME, MatchConfig, Rating          # noqa: E402
 from ui.main_window import MainWindow             # noqa: E402
 
@@ -113,3 +114,7 @@ def test_unrated_second_drag_finalizes_previous_as_good(win):
     assert win.pending_attack is not None
     assert win.pending_attack[0] == HOME
     assert win.pending_attack[2] == (3.0, 2.0, 4.0, 3.0)
+    # the formations flip to the pending attacker at once: HOME (now
+    # counter-attacking) shows offence, AWAY drops to defence
+    assert win._team_mode(HOME) == Mode.OFFENSE
+    assert win._team_mode(AWAY) == Mode.DEFENSE
