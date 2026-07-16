@@ -280,6 +280,14 @@ class MainWindow(QMainWindow):
         traj = (round(x1, 2), round(y1, 2), round(x2, 2), round(y2, 2))
         if self._try_block_deflection(x1, y1, x2, y2):
             return
+        if self.pending_attack is not None:
+            # scouter drew the next attack without rating the previous one:
+            # finalize it with the default '+' (in play) so a fast rally can
+            # be charted at full speed, then let this drag start the next
+            # attack. A GOOD attack sends the engine to DEFENSE, so the branch
+            # below primes the counter-attack for the other team.
+            self._finalize_pending_attack(Rating.GOOD)
+            st = self.engine.state
         if st.phase == Phase.AWAIT_SERVE:
             team = st.serving_team
             server = self.engine.expected_server()
@@ -350,10 +358,7 @@ class MainWindow(QMainWindow):
             return
         st = self.engine.state
         if self.pending_attack is not None:
-            team, attacker, traj = self.pending_attack
-            self.pending_attack = None
-            self._append(AttackEvent(team, attacker, rating, traj))
-            self._auto_select_digger(traj)
+            self._finalize_pending_attack(rating)
         elif st.phase == Phase.RECEPTION:
             recv = other(st.serving_team)
             if not (self.candidate and self.candidate[0] == recv):
@@ -378,6 +383,15 @@ class MainWindow(QMainWindow):
             self.refresh()
         else:
             self._hint("draw the serve first")
+
+    def _finalize_pending_attack(self, rating: Rating) -> None:
+        """Commit the primed attack with `rating` and preselect the likely
+        digger. Shared by on_rating (explicit tap) and on_trajectory (an
+        unrated attack the scouter left behind by drawing the next one)."""
+        team, attacker, traj = self.pending_attack
+        self.pending_attack = None
+        self._append(AttackEvent(team, attacker, rating, traj))
+        self._auto_select_digger(traj)
 
     def _auto_select_digger(self, traj: tuple | None) -> None:
         """After a non-terminal attack, preselect the most likely digger:

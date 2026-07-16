@@ -91,15 +91,25 @@ def test_deflection_onto_blockers_half_stays_in_play(win):
     assert win.candidate is not None and win.candidate[0] == HOME
 
 
-def test_non_extension_second_drag_just_redraws(win):
-    # primed attack ends far from the net, so no deflection is possible
+def test_unrated_second_drag_finalizes_previous_as_good(win):
+    # primed AWAY attack ends far from the net, so no deflection is possible
     win.on_trajectory(6.0, 4.5, 5.0, 4.5)
-    first = win.pending_attack
-    assert first is not None
-    n = len(win.engine.events)
-    # a second drag near the net does NOT extend it: press is nowhere near
-    # the (5.0, 4.5) arrow tip -> treated as a fresh attack, no event yet
-    win.on_trajectory(3.0, 2.0, 4.0, 3.0)
-    assert len(win.engine.events) == n          # nothing auto-finalized
     assert win.pending_attack is not None
+    n = len(win.engine.events)
+    # a second drag, not a block deflection (press nowhere near the arrow
+    # tip), finalizes the previous attack as the default '+' (in play) and
+    # primes the opponent's counter-attack -- letting a fast rally be
+    # charted without stopping to score each contact
+    win.on_trajectory(3.0, 2.0, 4.0, 3.0)
+    assert len(win.engine.events) == n + 1      # previous attack committed
+    ev = win.engine.events[-1]
+    assert isinstance(ev, AttackEvent)
+    assert ev.team == AWAY
+    assert ev.rating == Rating.GOOD
+    assert ev.trajectory == (6.0, 4.5, 5.0, 4.5)
+    # a GOOD attack sends the ball to HOME to defend; the new drag primes
+    # HOME's counter-attack, still unrated
+    assert win.engine.state.phase == Phase.DEFENSE
+    assert win.pending_attack is not None
+    assert win.pending_attack[0] == HOME
     assert win.pending_attack[2] == (3.0, 2.0, 4.0, 3.0)
