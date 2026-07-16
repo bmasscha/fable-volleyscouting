@@ -1368,19 +1368,29 @@ export function App() {
     setScreen("match");
   }
 
-  function appendEvent(event: MatchEvent): MatchEngine | null {
+  function appendEvent(event: MatchEvent | MatchEvent[]): MatchEngine | null {
     if (session == null) {
       return null;
     }
-    const stamped = stampEvent(event);
+    const inputs = Array.isArray(event) ? event : [event];
+    if (inputs.length === 0) {
+      return null;
+    }
     const preview = new MatchEngine(session.config, session.teams);
     preview.load_events(session.events);
-    const warnings = preview.append(stamped);
+    // a gesture may log more than one event at once (e.g. a reception and the
+    // blocked attack drawn out of it); warnings reflect the last, decisive one
+    const appended: MatchEvent[] = [];
+    let warnings: string[] = [];
+    for (const input of inputs) {
+      const stamped = stampEvent(input);
+      warnings = preview.append(stamped);
+      appended.push(stamped);
+    }
     // with config.auto_libero the app enters the engine-proposed libero
     // exchanges (forced front-row exits, learned serve-receive
     // re-entries) right after the user's event; undoLast removes them
     // together with the event that triggered them
-    const appended: MatchEvent[] = [stamped];
     const autoNotices: string[] = [];
     for (let i = 0; i < 6; i++) {
       const auto = preview.next_auto_libero_swap();
@@ -1537,9 +1547,74 @@ export function App() {
     setCandidate(null);
   }
 
-  function handleCourtTrajectory(x1: number, y1: number, x2: number, y2: number): void {
+  function handleCourtTrajectory(
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    vertex: [number, number] | null = null,
+  ): void {
     if (engine == null) {
       return;
+    }
+
+    // Single-stroke block gesture: one continuous drag that bends at the net
+    // is the attack arrow (start -> block touch) and the deflection (block
+    // touch -> landing) in one motion. The apex sitting in the net zone is what
+    // marks it as a block; anywhere else the bend is ignored and the drag reads
+    // as a straight trajectory. Auto-finalizes the attack -- no rating tap.
+    // Skipped while an attack is pending: that follow-up drag belongs to the
+    // two-stroke deflection path below.
+    if (pendingAttack == null && vertex != null && Math.abs(vertex[0]) <= BLOCK_NET_ZONE) {
+      const phase = engine.state.phase;
+      const team = phase === Phase.ATTACK
+        ? attackingTeam
+        : phase === Phase.DEFENSE
+          ? diggingTeam
+          : phase === Phase.RECEPTION
+            ? receivingTeam
+            : null;
+      if (team != null) {
+        const attacker = candidate?.teamKey === team
+          ? candidate.playerId
+          : nearestOnEngine(engine, team, x1, y1);
+        if (attacker != null) {
+          const landing: [number, number, number, number] = [
+            Number(x1.toFixed(2)), Number(y1.toFixed(2)),
+            Number(x2.toFixed(2)), Number(y2.toFixed(2)),
+          ];
+          const touch: [number, number] = [
+            Number(vertex[0].toFixed(2)), Number(vertex[1].toFixed(2)),
+          ];
+          const kind = classify_block_deflection(engine.side_of(team), x2, y2);
+          const rating = kind === BLOCK_OUT
+            ? Rating.PERFECT
+            : kind === COVERED ? Rating.POOR : Rating.GOOD;
+          // out of reception the drag doubles as the reception, so log it
+          // first (rated good) before the blocked attack it feeds
+          const priorEvents: MatchEvent[] = phase === Phase.RECEPTION
+            ? [{ type: "reception", team: receivingTeam, player_id: attacker, rating: Rating.GOOD }]
+            : [];
+          const preview = appendEvent([
+            ...priorEvents,
+            {
+              type: "attack",
+              team,
+              player_id: attacker,
+              rating,
+              trajectory: landing,
+              block_touch: touch,
+            },
+          ]);
+          setPendingAttack(null);
+          if (preview?.state.phase === Phase.DEFENSE) {
+            primeDigger(preview, other(preview.state.attacking_team!), landing);
+          } else {
+            setCandidate(null);
+          }
+          return;
+        }
+      }
     }
 
     // Two-stroke block gesture: a follow-up drag that starts near a pending

@@ -21,6 +21,14 @@ const MIN_Y = -FREE_ZONE_Y;
 const VIEWBOX_WIDTH = 2 * (COURT_HALF_LENGTH + FREE_ZONE_X);
 const VIEWBOX_HEIGHT = COURT_WIDTH + 2 * FREE_ZONE_Y;
 const TAP_THRESHOLD_PX = 12;
+// Single-stroke block gesture: as the finger detours out to the net and back,
+// the apex of that detour is the block touch. We store the drag path (thinned
+// to points at least this far apart, in court metres) and pick the point whose
+// out-and-back detour beats the straight start->end chord by at least this many
+// metres -- a genuine V clears it by several metres, a slightly curved straight
+// drag stays well under it.
+const PATH_MIN_STEP = 0.12;
+const VERTEX_MIN_EXCESS = 1.2;
 
 const FREE_ZONE_COLOR = "#2a6f97";
 const COURT_COLOR = "#e8853b";
@@ -51,6 +59,7 @@ interface CourtTrajectory {
   y1: number;
   x2: number;
   y2: number;
+  vertex?: CourtPoint | null;
 }
 
 interface SvgViewTransform {
@@ -65,6 +74,7 @@ interface PointerDragState {
   pressClientX: number;
   pressClientY: number;
   transform: SvgViewTransform;
+  path: CourtPoint[];
 }
 
 interface CourtSurfaceProps {
@@ -75,7 +85,13 @@ interface CourtSurfaceProps {
   trajectoriesExpired: boolean;
   onPlayerTap: (teamKey: string, playerId: string) => void;
   onCourtTap: (x: number, y: number) => void;
-  onTrajectory: (x1: number, y1: number, x2: number, y2: number) => void;
+  onTrajectory: (
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    vertex: [number, number] | null,
+  ) => void;
 }
 
 /** Open-wing arrow path like the desktop _Arrow: shaft plus two wings at
@@ -98,6 +114,36 @@ function arrowPath(x1: number, y1: number, x2: number, y2: number): string {
     d += ` M ${x2} ${y2} L ${wx} ${wy}`;
   }
   return d;
+}
+
+/** Append a court point to the drag path, thinning to at most one point per
+ * PATH_MIN_STEP so the detour scan stays cheap over a long drag. */
+function appendPathPoint(path: CourtPoint[], point: CourtPoint): void {
+  const last = path[path.length - 1];
+  if (last == null || Math.hypot(point.x - last.x, point.y - last.y) >= PATH_MIN_STEP) {
+    path.push({ x: point.x, y: point.y });
+  }
+}
+
+/** The path point that detours farthest off the straight start->end chord,
+ * or null when the drag is essentially straight. "Detour" is how much longer
+ * start->point->end is than start->end, which stays robust even when start and
+ * end nearly coincide (a deflection dropping back near the attacker). */
+function detectVertex(path: CourtPoint[], start: CourtPoint, end: CourtPoint): CourtPoint | null {
+  const chord = Math.hypot(end.x - start.x, end.y - start.y);
+  let best: CourtPoint | null = null;
+  let bestExcess = VERTEX_MIN_EXCESS;
+  for (const point of path) {
+    const detour =
+      Math.hypot(point.x - start.x, point.y - start.y) +
+      Math.hypot(point.x - end.x, point.y - end.y) -
+      chord;
+    if (detour > bestExcess) {
+      bestExcess = detour;
+      best = point;
+    }
+  }
+  return best;
 }
 
 function measureSvg(svg: SVGSVGElement): SvgViewTransform {
@@ -149,10 +195,13 @@ export function CourtSurface({
       return;
     }
     path.style.display = "block";
-    path.setAttribute(
-      "d",
-      arrowPath(trajectory.x1, trajectory.y1, trajectory.x2, trajectory.y2),
-    );
+    const { x1, y1, x2, y2, vertex } = trajectory;
+    // Bent draft (start -> block touch -> landing) mirrors how a committed
+    // blocked attack is drawn, so the arrow previews the block as you draw it.
+    const d = vertex == null
+      ? arrowPath(x1, y1, x2, y2)
+      : `M ${x1} ${y1} L ${vertex.x} ${vertex.y} ${arrowPath(vertex.x, vertex.y, x2, y2)}`;
+    path.setAttribute("d", d);
   }
 
   function flushDraftTrajectory(): void {
@@ -191,6 +240,7 @@ export function CourtSurface({
       pressClientX: event.clientX,
       pressClientY: event.clientY,
       transform,
+      path: [pressCourt],
     };
     svg.setPointerCapture(event.pointerId);
   }
@@ -206,11 +256,13 @@ export function CourtSurface({
       return;
     }
     const current = clientToCourt(pointerRef.current.transform, event.clientX, event.clientY);
+    appendPathPoint(pointerRef.current.path, current);
     scheduleDraftTrajectory({
       x1: pointerRef.current.pressCourt.x,
       y1: pointerRef.current.pressCourt.y,
       x2: current.x,
       y2: current.y,
+      vertex: detectVertex(pointerRef.current.path, pointerRef.current.pressCourt, current),
     });
   }
 
@@ -222,11 +274,21 @@ export function CourtSurface({
     }
     svgRef.current.releasePointerCapture(event.pointerId);
     const releaseCourt = clientToCourt(pointer.transform, event.clientX, event.clientY);
+    appendPathPoint(pointer.path, releaseCourt);
     const distance = Math.hypot(event.clientX - pointer.pressClientX, event.clientY - pointer.pressClientY);
+    const vertex = distance > TAP_THRESHOLD_PX
+      ? detectVertex(pointer.path, pointer.pressCourt, releaseCourt)
+      : null;
     clearPointerState();
 
     if (distance > TAP_THRESHOLD_PX) {
-      onTrajectory(pointer.pressCourt.x, pointer.pressCourt.y, releaseCourt.x, releaseCourt.y);
+      onTrajectory(
+        pointer.pressCourt.x,
+        pointer.pressCourt.y,
+        releaseCourt.x,
+        releaseCourt.y,
+        vertex == null ? null : [vertex.x, vertex.y],
+      );
       return;
     }
 
