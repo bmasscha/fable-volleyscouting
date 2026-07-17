@@ -109,6 +109,11 @@ class MatchConfig:
     # app enters forced / learned libero exchanges itself (see
     # MatchEngine.next_auto_libero_swap); off = every exchange is manual
     auto_libero: bool = True
+    # playing system per team, by id (see core.systems.SystemSpec.id);
+    # the literal default is duplicated from core.systems.DEFAULT_SYSTEM
+    # rather than imported, so models stays dependency-light
+    systems: dict[str, str] = field(
+        default_factory=lambda: {HOME: "5-1", AWAY: "5-1"})
 
     def to_dict(self) -> dict:
         return {
@@ -120,8 +125,15 @@ class MatchConfig:
             "libero_may_serve": self.libero_may_serve,
             "deciding_set_switch_at": self.deciding_set_switch_at,
             "auto_libero": self.auto_libero,
+            "systems": dict(self.systems),
         }
 
     @classmethod
     def from_dict(cls, d: dict) -> "MatchConfig":
-        return cls(**{k: d[k] for k in cls().to_dict() if k in d})
+        defaults = cls()
+        simple = {k: d[k] for k in defaults.to_dict()
+                 if k in d and k != "systems"}
+        systems = dict(defaults.systems)
+        systems.update({k: v for k, v in d.get("systems", {}).items()
+                       if k in TEAM_KEYS})
+        return cls(**simple, systems=systems)

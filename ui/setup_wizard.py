@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
 from core.events import SetStartEvent
 from core.models import AWAY, HOME, MatchConfig, Role, Team
 from core.persistence import load_teams
+from core.systems import DEFAULT_SYSTEM, SYSTEMS, system_ids
 from ui.roster_dialog import RosterDialog
 
 _STYLE = """
@@ -68,6 +69,7 @@ class _TeamPanel(QGroupBox):
         for i, (pos, desc) in enumerate(_POSITIONS):
             grid.addWidget(QLabel(f"{pos} ({desc})"), i, 0)
             combo = QComboBox()
+            combo.currentIndexChanged.connect(self._update_system_hint)
             self.lineup_combos.append(combo)
             grid.addWidget(combo, i, 1)
         grid.setColumnStretch(1, 1)
@@ -90,6 +92,24 @@ class _TeamPanel(QGroupBox):
         self.libero_list.setMinimumHeight(120)
         self.libero_list.setMaximumHeight(190)
         lay.addWidget(self.libero_list)
+
+        lay.addWidget(QLabel("Playing system:"))
+        self.system_combo = QComboBox()
+        for sid in system_ids():
+            spec = SYSTEMS[sid]
+            self.system_combo.addItem(spec.label, sid)
+            self.system_combo.setItemData(
+                self.system_combo.count() - 1, spec.description,
+                Qt.ItemDataRole.ToolTipRole)
+        default_idx = self.system_combo.findData(DEFAULT_SYSTEM)
+        self.system_combo.setCurrentIndex(max(default_idx, 0))
+        self.system_combo.currentIndexChanged.connect(self._update_system_hint)
+        lay.addWidget(self.system_combo)
+
+        self.system_hint = QLabel("")
+        self.system_hint.setStyleSheet("color: #888; font-size: 10pt;")
+        self.system_hint.setWordWrap(True)
+        lay.addWidget(self.system_hint)
 
     # ------------------------------------------------------------- library
 
@@ -137,6 +157,29 @@ class _TeamPanel(QGroupBox):
         non_liberos = [p for p in players if p.role != Role.LIBERO]
         for combo, p in zip(self.lineup_combos, non_liberos[:6]):
             combo.setCurrentIndex(combo.findData(p.id))
+        self._update_system_hint()
+
+    def system_id(self) -> str:
+        return self.system_combo.currentData() or DEFAULT_SYSTEM
+
+    def _update_system_hint(self, *_args) -> None:
+        """Soft, never-blocking nudge: does the lineup's setter count match
+        what the chosen system expects? Keyless systems (6-6) have no
+        setter role to check, so they never show a hint."""
+        spec = SYSTEMS.get(self.system_id())
+        team = self.current_team()
+        if spec is None or not spec.uses_setter_roles or team is None:
+            self.system_hint.setText("")
+            return
+        setter_count = sum(
+            1 for pid in self.lineup_ids()
+            if pid and (p := team.player(pid)) and p.role == Role.SETTER)
+        if setter_count == spec.expected_setters:
+            self.system_hint.setText("")
+        else:
+            self.system_hint.setText(
+                f"{spec.id} expects {spec.expected_setters} setter(s) in "
+                f"the lineup; found {setter_count}.")
 
     def _rotate(self, steps: int) -> None:
         """Shift the six P1..P6 assignments one rotation (P2 -> P1 etc.)."""
@@ -328,6 +371,8 @@ class MatchSetupDialog(QDialog):
             subs_per_set=self.subs_spin.value(),
             libero_may_serve=self.libero_serve_chk.isChecked(),
             auto_libero=self.auto_libero_chk.isChecked(),
+            systems={HOME: self.home_panel.system_id(),
+                     AWAY: self.away_panel.system_id()},
         )
         self.set_start_event = SetStartEvent(
             set_number=1,

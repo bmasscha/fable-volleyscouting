@@ -20,19 +20,20 @@ import time
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QAction, QKeySequence, QShortcut
+from PyQt6.QtGui import QAction, QActionGroup, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (QButtonGroup, QComboBox, QDialog,
                              QDialogButtonBox, QFileDialog, QGridLayout,
-                             QHBoxLayout, QLabel, QMainWindow, QMessageBox,
-                             QPushButton, QRadioButton, QToolBar, QVBoxLayout,
-                             QWidget)
+                             QHBoxLayout, QLabel, QMainWindow, QMenu,
+                             QMessageBox, QPushButton, QRadioButton, QToolBar,
+                             QToolButton, QVBoxLayout, QWidget)
 
 from core import persistence, rotation
 from core.blocks import (BLOCK_GRAB_RADIUS, BLOCK_NET_ZONE, BLOCK_OUT, COVERED,
                          IN_PLAY, classify_block_deflection)
 from core.engine import MatchEngine, Phase
-from core.formations import (Mode, acting_setter_slot, formation_note,
-                             formation_xy)
+from core.formations import Mode
+from core.systems import (DEFAULT_SYSTEM, SYSTEMS, acting_setter_slot_for,
+                          get_system, system_ids, system_note, system_xy)
 from core.events import (AttackEvent, DigEvent, LiberoSwapEvent,
                          ManualScoreEvent, RallyPointEvent, ReceptionEvent,
                          RotationAdjustEvent, ServeEvent, ServeOverrideEvent,
@@ -101,9 +102,32 @@ class MainWindow(QMainWindow):
         self.formations_action.setCheckable(True)
         self.formations_action.setChecked(True)
         self.formations_action.setToolTip(
-            "Draw players at realistic 5-1 positions (off = rotation grid)")
+            "Draw players at realistic system positions (off = rotation grid)")
         self.formations_action.toggled.connect(self._on_formations_toggled)
         tb.addAction(self.formations_action)
+
+        self.system_buttons: dict[str, QToolButton] = {}
+        self.system_actions: dict[str, dict[str, QAction]] = {HOME: {}, AWAY: {}}
+        for tk, label in ((HOME, "Home"), (AWAY, "Away")):
+            btn = QToolButton()
+            btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+            menu = QMenu(btn)
+            group = QActionGroup(btn)
+            group.setExclusive(True)
+            for sid in system_ids():
+                spec = SYSTEMS[sid]
+                act = QAction(spec.label, btn)
+                act.setCheckable(True)
+                act.setToolTip(spec.description)
+                act.triggered.connect(
+                    lambda _=False, t=tk, s=sid: self._on_system_selected(t, s))
+                group.addAction(act)
+                menu.addAction(act)
+                self.system_actions[tk][sid] = act
+            btn.setMenu(menu)
+            self.system_buttons[tk] = btn
+            tb.addWidget(btn)
+        self._sync_system_buttons()
 
         self.roles_action = QAction("Show Roles", self)
         self.roles_action.setCheckable(True)
@@ -652,9 +676,10 @@ class MainWindow(QMainWindow):
 
     def _acting_setter_id(self, team_key: str) -> str | None:
         """The setter actually running the offence: in a 6-2 the back-row
-        one of the two (the other is hitting right side). None when no
-        setter is identifiable."""
-        slot = acting_setter_slot(self._roles(team_key))
+        one of the two (the other is hitting right side); in a 6-6 always
+        whoever stands at P3. None when no setter is identifiable."""
+        spec = get_system(self.config.systems.get(team_key))
+        slot = acting_setter_slot_for(spec, self._roles(team_key))
         if slot is None:
             return None
         return self.engine.state.team[team_key].lineup[slot]
@@ -664,14 +689,35 @@ class MainWindow(QMainWindow):
         token rendering and the nearest-player auto-selection, so the
         pick always agrees with what the scouter sees."""
         ts = self.engine.state.team[team_key]
-        xy = formation_xy(acting_setter_slot(self._roles(team_key)),
-                          self._team_mode(team_key),
-                          self.engine.side_of(team_key))
+        spec = get_system(self.config.systems.get(team_key))
+        xy = system_xy(spec, self._roles(team_key), self._team_mode(team_key),
+                       self.engine.side_of(team_key))
         return {pid: xy[idx] for idx, pid in enumerate(ts.lineup)}
 
     def _on_formations_toggled(self, checked: bool) -> None:
         self.formations_enabled = checked
         self.refresh()
+
+    def _on_system_selected(self, team_key: str, system_id: str) -> None:
+        self.config.systems[team_key] = system_id
+        self._sync_system_buttons()
+        self.refresh()
+        self._autosave()
+
+    def _sync_system_buttons(self) -> None:
+        """Toolbar buttons only make sense with a live match; keep them
+        disabled otherwise and always reflect config.systems so a newly
+        opened or created match shows the right label/check state."""
+        enabled = self.engine is not None
+        label = {HOME: "Home", AWAY: "Away"}
+        for tk in (HOME, AWAY):
+            btn = self.system_buttons[tk]
+            btn.setEnabled(enabled)
+            sid = self.config.systems.get(tk, DEFAULT_SYSTEM)
+            btn.setText(f"{label[tk]}: {sid}")
+            act = self.system_actions[tk].get(sid)
+            if act is not None:
+                act.setChecked(True)
 
     def _on_roles_toggled(self, checked: bool) -> None:
         self.refresh()
@@ -708,6 +754,7 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------- refresh
 
     def refresh(self) -> None:
+        self._sync_system_buttons()
         if not self.engine or self.engine.state.set_number == 0:
             self.rating_bar.set_prompt("Toolbar → New match to start scouting")
             self.rating_bar.show_serve_chips(False)
@@ -808,7 +855,8 @@ class MainWindow(QMainWindow):
         alerts = self.engine.pending_alerts()
         if self.formations_enabled:
             for tk in (HOME, AWAY):
-                note = formation_note(self._roles(tk))
+                spec = get_system(self.config.systems.get(tk))
+                note = system_note(spec, self._roles(tk))
                 if note:
                     alerts.append(f"{self.teams[tk].name}: {note}")
         sp_info = self.engine.set_point_info()
