@@ -19,6 +19,7 @@ describe("match setup draft", () => {
     expect(draft.lineups[HOME]).toHaveLength(6);
     expect(draft.lineups[HOME]).not.toContain("home-07");
     expect(draft.liberos[HOME]).toContain("home-07");
+    expect(draft.systems).toEqual({ [HOME]: "5-1", [AWAY]: "5-1" });
   });
 
   test("rebuilding once the roster library loads still designates the liberos", () => {
@@ -151,6 +152,17 @@ describe("buildMatchSetupResult", () => {
       left_team: AWAY,
     });
     expect(result.result!.setStartEvent.lineups[HOME]).toHaveLength(6);
+  });
+
+  test("carries the selected playing systems into the config", () => {
+    const library = createSeedRosterLibrary();
+    const draft = makeMatchSetupDraft(library);
+    draft.systems = { [HOME]: "6-2", [AWAY]: "6-6" };
+
+    const result = buildMatchSetupResult(draft, library);
+
+    expect(result.error).toBeNull();
+    expect(result.result!.config.systems).toEqual({ [HOME]: "6-2", [AWAY]: "6-6" });
   });
 
   test("normalizes numeric setup fields to integers", () => {

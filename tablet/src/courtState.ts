@@ -1,8 +1,9 @@
 import { MatchEngine, Phase } from "./core/engine";
 import { MatchEvent, Trajectory } from "./core/events";
-import { Mode, acting_setter_slot, formation_xy } from "./core/formations";
+import { Mode, acting_setter_slot } from "./core/formations";
 import { Role, TeamKey, TEAM_KEYS, other, team_player } from "./core/models";
 import { COURT_HALF_LENGTH, COURT_WIDTH } from "./core/rotation";
+import { get_system, system_xy } from "./core/systems";
 
 export interface CandidateSelection {
   teamKey: TeamKey;
@@ -99,8 +100,9 @@ export function displayedPositions(
   attackingOverride: TeamKey | null = null,
 ): Record<string, [number, number]> {
   const teamState = engine.state.team[teamKey];
-  const xy = formation_xy(
-    acting_setter_slot(teamRoles(engine, teamKey)),
+  const xy = system_xy(
+    get_system(engine.config.systems[teamKey]),
+    teamRoles(engine, teamKey),
     teamMode(engine, teamKey, formationsEnabled, attackingOverride),
     engine.side_of(teamKey),
   );

@@ -46,6 +46,7 @@ export interface MatchSetupDraft {
   subsPerSet: number;
   liberoMayServe: boolean;
   autoLibero: boolean;
+  systems: Record<TeamKey, string>;
 }
 
 export interface MatchSetupResult {
@@ -304,6 +305,7 @@ export function makeMatchSetupDraft(
     subsPerSet: previous?.subsPerSet ?? defaults.subs_per_set,
     liberoMayServe: previous?.liberoMayServe ?? defaults.libero_may_serve,
     autoLibero: previous?.autoLibero ?? defaults.auto_libero,
+    systems: previous?.systems ?? { ...defaults.systems },
   };
 }
 
@@ -406,6 +408,7 @@ export function buildMatchSetupResult(
     subs_per_set: normalizedBoundedInteger(draft.subsPerSet, 0, 20),
     libero_may_serve: draft.liberoMayServe,
     auto_libero: draft.autoLibero,
+    systems: { ...draft.systems },
   };
   return {
     error: null,

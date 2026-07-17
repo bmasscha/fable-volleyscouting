@@ -48,7 +48,7 @@ import {
   rotateSetupLineup,
   sortTeams,
 } from "./setup";
-import { formation_note } from "./core/formations";
+import { SYSTEMS, get_system, system_ids, system_note } from "./core/systems";
 import {
   CandidateSelection,
   PendingAttackState,
@@ -919,6 +919,27 @@ function MatchSetupScreen({
           </select>
         </label>
 
+        <label>
+          Playing system
+          <select
+            value={draft.systems[teamKey]}
+            title={SYSTEMS[draft.systems[teamKey]]?.description}
+            onChange={(event) => onDraftChange({
+              ...draft,
+              systems: {
+                ...draft.systems,
+                [teamKey]: (event.currentTarget as HTMLSelectElement).value,
+              },
+            })}
+          >
+            {system_ids().map((systemId) => (
+              <option key={`${teamKey}-system-${systemId}`} value={systemId} title={SYSTEMS[systemId].description}>
+                {SYSTEMS[systemId].label}
+              </option>
+            ))}
+          </select>
+        </label>
+
         <div className="lineup-editor">
           {POSITION_LABELS.map((position, index) => (
             <label key={`${teamKey}-${position}`}>
@@ -1227,7 +1248,8 @@ export function App() {
     const alerts = engine.pending_alerts();
     if (formationsEnabled) {
       for (const teamKey of TEAM_KEYS) {
-        const note = formation_note(teamRoles(engine, teamKey));
+        const spec = get_system(engine.config.systems[teamKey]);
+        const note = system_note(spec, teamRoles(engine, teamKey));
         if (note != null) {
           alerts.push(`${engine.teams[teamKey].name}: ${note}`);
         }

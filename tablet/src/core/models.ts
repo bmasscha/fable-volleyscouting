@@ -131,6 +131,10 @@ export interface MatchConfig {
   // app enters forced / learned libero exchanges itself (see
   // MatchEngine.next_auto_libero_swap); off = every exchange is manual
   auto_libero: boolean;
+  // playing system per team, by id (see core/systems.ts's SystemSpec.id);
+  // the literal default is duplicated from core/systems.ts's
+  // DEFAULT_SYSTEM rather than imported, so models stays dependency-light
+  systems: Record<TeamKey, string>;
 }
 
 export function default_config(): MatchConfig {
@@ -143,6 +147,7 @@ export function default_config(): MatchConfig {
     libero_may_serve: false,
     deciding_set_switch_at: 8,
     auto_libero: true,
+    systems: { [HOME]: "5-1", [AWAY]: "5-1" },
   };
 }
 
@@ -156,13 +161,26 @@ export function config_to_dict(c: MatchConfig): Record<string, unknown> {
     libero_may_serve: c.libero_may_serve,
     deciding_set_switch_at: c.deciding_set_switch_at,
     auto_libero: c.auto_libero,
+    systems: { ...c.systems },
   };
 }
 
 export function config_from_dict(d: any): MatchConfig {
   const c = default_config();
   for (const k of Object.keys(c) as (keyof MatchConfig)[]) {
+    if (k === "systems") {
+      continue;
+    }
     if (d != null && k in d) (c as any)[k] = d[k];
   }
+  const systems: Record<TeamKey, string> = { ...c.systems };
+  if (d?.systems != null) {
+    for (const teamKey of TEAM_KEYS) {
+      if (teamKey in d.systems) {
+        systems[teamKey] = d.systems[teamKey];
+      }
+    }
+  }
+  c.systems = systems;
   return c;
 }

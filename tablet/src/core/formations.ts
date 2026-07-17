@@ -79,7 +79,7 @@ export function formation_note(roles: Record<number, Role>): string | null {
 // right of centre) as the overlap rules allow. Every chart satisfies
 // every overlap constraint (pinned by tests/test_formations.py).
 // Values: slot index 0..5 (= P1..P6) -> (x, y) on the LEFT half.
-const _RECEIVE: Record<number, Record<number, [number, number]>> = {
+export const _RECEIVE: Record<number, Record<number, [number, number]>> = {
   0: { 0: [-6.8, 8.2], // S    hides in the right-back corner...
     1: [-5.2, 7.0], // OH   ...behind the P2 passer, pulled short
     2: [-1.2, 4.5], // MB   net, quick
@@ -118,9 +118,9 @@ const _RECEIVE: Record<number, Record<number, [number, number]>> = {
     5: [-2.5, 5.4] }, // S    pushed up mid-right, releases at contact
 };
 
-type _OffsetCategory = "S" | "OPP" | "OH" | "MB";
+export type _OffsetCategory = "S" | "OPP" | "OH" | "MB";
 
-function _spot_key(cat: _OffsetCategory, front: boolean): string {
+export function _spot_key(cat: _OffsetCategory, front: boolean): string {
   return `${cat}|${front}`;
 }
 
@@ -129,7 +129,7 @@ function _spot_key(cat: _OffsetCategory, front: boolean): string {
 // MB -> 3 (front) / 5 (back = libero), S/OPP -> 2 (front) / 1 (back);
 // a back-row setter penetrates to the setting target at the net.
 //   offset category: 0 = S, 3 = OPP, 1/4 = OH, 2/5 = MB.
-const _OFFENSE: Record<string, [number, number]> = {
+export const _OFFENSE: Record<string, [number, number]> = {
   [_spot_key("S", true)]: [-0.9, 5.8], // setting target, right of centre
   [_spot_key("S", false)]: [-1.6, 6.2], // penetrated from the back row
   [_spot_key("OPP", true)]: [-3.4, 7.4], // zone 2 approach
@@ -139,7 +139,7 @@ const _OFFENSE: Record<string, [number, number]> = {
   [_spot_key("MB", true)]: [-2.6, 4.4], // zone 3, quick approach
   [_spot_key("MB", false)]: [-6.8, 1.6], // zone 5 (the libero)
 };
-const _DEFENSE: Record<string, [number, number]> = {
+export const _DEFENSE: Record<string, [number, number]> = {
   [_spot_key("S", true)]: [-1.4, 7.4], // block, zone 2
   [_spot_key("S", false)]: [-6.0, 7.5], // perimeter, zone 1
   [_spot_key("OPP", true)]: [-1.4, 7.4],
@@ -149,14 +149,14 @@ const _DEFENSE: Record<string, [number, number]> = {
   [_spot_key("MB", true)]: [-1.2, 4.5], // block, middle
   [_spot_key("MB", false)]: [-6.0, 1.8], // zone 5 (the libero)
 };
-const _OFFSET_CATEGORY: Record<number, _OffsetCategory> = {
+export const _OFFSET_CATEGORY: Record<number, _OffsetCategory> = {
   0: "S", 1: "OH", 2: "MB", 3: "OPP", 4: "OH", 5: "MB",
 };
 
 // --- serving team, pre-contact (overlap applies; server exempt) --------
 // Rotational order, front row tight to the net ready to block, back row
 // spread; the switch to role-based defence happens after contact.
-const _SERVE_BASE: Record<number, [number, number] | null> = {
+export const _SERVE_BASE: Record<number, [number, number] | null> = {
   0: null, // server: serve_xy(side)
   1: [-1.6, 7.4],
   2: [-1.6, 4.5],
