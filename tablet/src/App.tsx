@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 
 import { CourtSurface } from "./CourtSurface";
 import {
@@ -27,8 +27,10 @@ import {
   clearAutosave,
   loadAutosave,
   loadRosterLibrary,
+  loadUserSystems,
   saveAutosave,
   saveRosterLibrary,
+  saveUserSystems,
 } from "./browserStorage";
 import {
   MatchSetupDraft,
@@ -48,7 +50,15 @@ import {
   rotateSetupLineup,
   sortTeams,
 } from "./setup";
-import { SYSTEMS, get_system, system_ids, system_note } from "./core/systems";
+import {
+  DEFAULT_SYSTEM,
+  SYSTEMS,
+  SystemSpec,
+  get_system,
+  system_ids,
+  system_note,
+} from "./core/systems";
+import { parse_import, refresh_registry } from "./core/user_systems";
 import {
   CandidateSelection,
   PendingAttackState,
@@ -837,6 +847,10 @@ function MatchSetupScreen({
   onStart,
 }: MatchSetupScreenProps) {
   const [error, setError] = useState<string | null>(null);
+  const [userSystems, setUserSystems] = useState<SystemSpec[]>(() => loadUserSystems());
+  const [importMessage, setImportMessage] = useState<string | null>(null);
+  const [importProblems, setImportProblems] = useState<string[]>([]);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   const homeTeam = library.find((team) => team.name === draft.homeTeamName) ?? null;
   const awayTeam = library.find((team) => team.name === draft.awayTeamName) ?? null;
@@ -844,6 +858,67 @@ function MatchSetupScreen({
   useEffect(() => {
     setError(null);
   }, [draft, library]);
+
+  async function importSystemFiles(files: FileList | null): Promise<void> {
+    if (files == null || files.length === 0) {
+      return;
+    }
+    const accepted: SystemSpec[] = [];
+    const problems: string[] = [];
+    for (const file of Array.from(files)) {
+      let text: string;
+      try {
+        text = await file.text();
+      } catch (readError) {
+        problems.push(`${file.name}: ${(readError as Error).message}`);
+        continue;
+      }
+      const parsed = parse_import(text);
+      for (const problem of parsed.problems) {
+        problems.push(`${file.name}: ${problem}`);
+      }
+      accepted.push(...parsed.specs);
+    }
+    // An imported id that already exists is replaced -- the update flow.
+    const merged = new Map<string, SystemSpec>();
+    for (const spec of userSystems) {
+      merged.set(spec.id, spec);
+    }
+    for (const spec of accepted) {
+      merged.set(spec.id, spec);
+    }
+    const nextList = [...merged.values()];
+    saveUserSystems(nextList);
+    refresh_registry(nextList);
+    setUserSystems(nextList);
+    setImportProblems(problems);
+    if (accepted.length > 0) {
+      setImportMessage(`imported: ${[...new Set(accepted.map((spec) => spec.id))].join(", ")}`);
+    } else {
+      setImportMessage(problems.length > 0 ? null : "No systems found in the selected file(s).");
+    }
+  }
+
+  function removeUserSystem(systemId: string): void {
+    const nextList = userSystems.filter((spec) => spec.id !== systemId);
+    saveUserSystems(nextList);
+    refresh_registry(nextList);
+    setUserSystems(nextList);
+    setImportMessage(null);
+    setImportProblems([]);
+    // A team pointing at the removed id must not show a dangling value.
+    let changed = false;
+    const systems = { ...draft.systems };
+    for (const teamKey of [HOME, AWAY] as const) {
+      if (systems[teamKey] === systemId) {
+        systems[teamKey] = DEFAULT_SYSTEM;
+        changed = true;
+      }
+    }
+    if (changed) {
+      onDraftChange({ ...draft, systems });
+    }
+  }
 
   function updateLineup(teamKey: TeamKey, index: number, playerId: string): void {
     onDraftChange({
@@ -1034,6 +1109,63 @@ function MatchSetupScreen({
             <section className="team-grid">
               {renderTeamPanel(HOME, "Home team", homeTeam, draft.homeTeamName)}
               {renderTeamPanel(AWAY, "Away team", awayTeam, draft.awayTeamName)}
+            </section>
+
+            <section className="import-systems-bar">
+              <div className="button-row compact">
+                <button
+                  type="button"
+                  onClick={() => importInputRef.current?.click()}
+                >
+                  Import systems…
+                </button>
+                <span className="muted">
+                  Load custom playing systems exported from the desktop app.
+                </span>
+                <input
+                  ref={importInputRef}
+                  type="file"
+                  accept=".json,application/json"
+                  multiple
+                  style={{ display: "none" }}
+                  onChange={(event) => {
+                    const input = event.currentTarget as HTMLInputElement;
+                    void importSystemFiles(input.files).finally(() => {
+                      input.value = "";
+                    });
+                  }}
+                />
+              </div>
+              {importMessage != null ? (
+                <p className="muted import-systems-note">{importMessage}</p>
+              ) : null}
+              {importProblems.length > 0 ? (
+                <ul className="import-systems-problems">
+                  {importProblems.map((problem, index) => (
+                    <li key={`import-problem-${index}`}>{problem}</li>
+                  ))}
+                </ul>
+              ) : null}
+              {userSystems.length > 0 ? (
+                <ul className="import-systems-list">
+                  {userSystems.map((spec) => (
+                    <li key={`user-system-${spec.id}`}>
+                      <span>
+                        <strong>{spec.id}</strong>
+                        <span className="muted"> — {spec.label}</span>
+                      </span>
+                      <button
+                        type="button"
+                        className="ghost import-systems-remove"
+                        title={`Remove ${spec.id}`}
+                        onClick={() => removeUserSystem(spec.id)}
+                      >
+                        ✕
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
             </section>
 
             <section className="controls-grid">

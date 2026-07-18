@@ -10,6 +10,8 @@ import {
   team_from_dict,
   team_to_dict,
 } from "./core/models";
+import { SystemSpec } from "./core/systems";
+import { deserialize_system, serialize_system } from "./core/user_systems";
 import { createSeedRosterLibrary, sortTeams } from "./setup";
 
 export interface MatchSnapshot {
@@ -34,8 +36,14 @@ interface StoredRosterLibrary {
   teams: Record<string, unknown>[];
 }
 
+interface StoredUserSystems {
+  version: 1;
+  systems: Record<string, unknown>[];
+}
+
 export const AUTOSAVE_KEY = "fable-scouter.tablet.autosave";
 export const ROSTER_LIBRARY_KEY = "fable-scouter.tablet.roster-library";
+export const USER_SYSTEMS_KEY = "fable-scouter.tablet.user-systems";
 
 function readStorageItem(key: string): string | null {
   try {
@@ -138,5 +146,44 @@ export function loadRosterLibrary(): Team[] {
     const seeded = createSeedRosterLibrary();
     saveRosterLibrary(seeded);
     return seeded;
+  }
+}
+
+/** Persist the imported custom systems as their serialized (validated)
+ * dicts, so storage is checked on the way out too. Returns whether the
+ * write succeeded. */
+export function saveUserSystems(specs: SystemSpec[]): boolean {
+  const stored: StoredUserSystems = {
+    version: 1,
+    systems: specs.map((spec) => serialize_system(spec)),
+  };
+  return writeStorageItem(USER_SYSTEMS_KEY, JSON.stringify(stored));
+}
+
+/** Load the imported custom systems, validating each stored dict on the
+ * way in. Corrupt or unreadable storage yields [] -- never throws (a bad
+ * blob must not stop the app from starting). Individually invalid entries
+ * are skipped. */
+export function loadUserSystems(): SystemSpec[] {
+  const raw = readStorageItem(USER_SYSTEMS_KEY);
+  if (raw == null) {
+    return [];
+  }
+  try {
+    const stored = JSON.parse(raw) as Partial<StoredUserSystems>;
+    if (!Array.isArray(stored.systems)) {
+      return [];
+    }
+    const specs: SystemSpec[] = [];
+    for (const entry of stored.systems) {
+      try {
+        specs.push(deserialize_system(entry));
+      } catch {
+        // Skip an individually corrupt system rather than dropping all.
+      }
+    }
+    return specs;
+  } catch {
+    return [];
   }
 }
