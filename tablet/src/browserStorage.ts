@@ -19,6 +19,9 @@ export interface MatchSnapshot {
   teams: Record<TeamKey, Team>;
   events: MatchEvent[];
   lastWarnings: string[];
+  // false = VNL-style fixed courts: the next-set suggestion keeps the
+  // current sides instead of flipping them
+  switchSides: boolean;
   savedAt: number | null;
 }
 
@@ -28,6 +31,7 @@ interface StoredSnapshot {
   teams: Record<string, Record<string, unknown>>;
   events: Record<string, unknown>[];
   lastWarnings: string[];
+  switchSides?: boolean;
   savedAt: number | null;
 }
 
@@ -84,6 +88,7 @@ export function saveAutosave(snapshot: MatchSnapshot): boolean {
     },
     events: snapshot.events.map((event) => event_to_dict(event)),
     lastWarnings: [...snapshot.lastWarnings],
+    switchSides: snapshot.switchSides,
     savedAt: snapshot.savedAt,
   };
   return writeStorageItem(AUTOSAVE_KEY, JSON.stringify(stored));
@@ -109,6 +114,7 @@ export function loadAutosave(): MatchSnapshot | null {
       lastWarnings: Array.isArray(stored.lastWarnings)
         ? stored.lastWarnings.filter((warning): warning is string => typeof warning === "string")
         : [],
+      switchSides: typeof stored.switchSides === "boolean" ? stored.switchSides : true,
       savedAt: typeof stored.savedAt === "number" ? stored.savedAt : null,
     };
   } catch {

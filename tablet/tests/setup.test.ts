@@ -154,6 +154,42 @@ describe("buildMatchSetupResult", () => {
     expect(result.result!.setStartEvent.lineups[HOME]).toHaveLength(6);
   });
 
+  test("defaults to switching sides between sets", () => {
+    const library = createSeedRosterLibrary();
+    const draft = makeMatchSetupDraft(library);
+    expect(draft.switchSides).toBe(true);
+
+    const result = buildMatchSetupResult(draft, library);
+
+    expect(result.result!.switchSides).toBe(true);
+    expect(result.result!.config.deciding_set_switch_at).toBe(8);
+  });
+
+  test("fixed courts disable the deciding-set mid-set switch", () => {
+    const library = createSeedRosterLibrary();
+    const draft = makeMatchSetupDraft(library);
+    draft.switchSides = false;
+
+    const result = buildMatchSetupResult(draft, library);
+
+    expect(result.error).toBeNull();
+    expect(result.result!.switchSides).toBe(false);
+    // the engine flips sides when the leading team reaches this score;
+    // out-of-reach means it never fires
+    expect(result.result!.config.deciding_set_switch_at)
+      .toBeGreaterThan(result.result!.config.points_deciding_set);
+  });
+
+  test("a rebuilt draft keeps the fixed-courts choice", () => {
+    const library = createSeedRosterLibrary();
+    const draft = makeMatchSetupDraft(library);
+    draft.switchSides = false;
+
+    const rebuilt = makeMatchSetupDraft(library, draft);
+
+    expect(rebuilt.switchSides).toBe(false);
+  });
+
   test("carries the selected playing systems into the config", () => {
     const library = createSeedRosterLibrary();
     const draft = makeMatchSetupDraft(library);

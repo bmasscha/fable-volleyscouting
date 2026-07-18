@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
-import { clearAutosave, loadRosterLibrary, saveAutosave, saveRosterLibrary, AUTOSAVE_KEY, ROSTER_LIBRARY_KEY } from "../src/browserStorage";
+import { clearAutosave, loadAutosave, loadRosterLibrary, saveAutosave, saveRosterLibrary, AUTOSAVE_KEY, ROSTER_LIBRARY_KEY } from "../src/browserStorage";
 import { default_config, make_player, make_team } from "../src/core/models";
 
 class FakeStorage implements Storage {
@@ -94,10 +94,46 @@ describe("browser roster library storage", () => {
       },
       events: [],
       lastWarnings: [],
+      switchSides: true,
       savedAt: null,
     });
 
     expect(ok).toBe(false);
     expect(clearAutosave()).toBe(false);
+  });
+
+  test("round-trips switchSides = false", () => {
+    saveAutosave({
+      config: default_config(),
+      teams: {
+        home: make_team("Home", [make_player(1, "A", undefined, "h1")]),
+        away: make_team("Away", [make_player(2, "B", undefined, "a1")]),
+      },
+      events: [],
+      lastWarnings: [],
+      switchSides: false,
+      savedAt: 123,
+    });
+
+    expect(loadAutosave()?.switchSides).toBe(false);
+  });
+
+  test("autosave from before switchSides defaults to switching sides", () => {
+    saveAutosave({
+      config: default_config(),
+      teams: {
+        home: make_team("Home", [make_player(1, "A", undefined, "h1")]),
+        away: make_team("Away", [make_player(2, "B", undefined, "a1")]),
+      },
+      events: [],
+      lastWarnings: [],
+      switchSides: false,
+      savedAt: null,
+    });
+    const stored = JSON.parse(localStorage.getItem(AUTOSAVE_KEY)!);
+    delete stored.switchSides;
+    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(stored));
+
+    expect(loadAutosave()?.switchSides).toBe(true);
   });
 });

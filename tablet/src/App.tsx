@@ -1328,6 +1328,17 @@ function MatchSetupScreen({
                   />
                   <span>Automatic libero exchange</span>
                 </label>
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={draft.switchSides}
+                    onChange={(event) => onDraftChange({
+                      ...draft,
+                      switchSides: (event.currentTarget as HTMLInputElement).checked,
+                    })}
+                  />
+                  <span>Teams switch sides between sets (off for VNL)</span>
+                </label>
               </article>
             </section>
 
@@ -1419,7 +1430,13 @@ export function App() {
     }
     return alerts;
   }, [engine, formationsEnabled]);
-  const nextSet = engine?.suggest_next_set_start() ?? null;
+  const suggestedNextSet = engine?.suggest_next_set_start() ?? null;
+  // fixed courts (VNL): the engine suggestion flips sides between sets;
+  // keep the current assignment instead. The scouter can still override
+  // either way via the swap-sides button / next-set editor.
+  const nextSet = suggestedNextSet == null || engine == null || (session?.switchSides ?? true)
+    ? suggestedNextSet
+    : { ...suggestedNextSet, left_team: engine.state.left_team };
   const servingTeam = engine?.state.serving_team ?? HOME;
   const receivingTeam = engine == null ? AWAY : other(engine.state.serving_team);
   const attackingTeam = engine?.state.attacking_team ?? receivingTeam;
@@ -1546,6 +1563,7 @@ export function App() {
       teams: result.teams,
       events: [stampEvent(result.setStartEvent)],
       lastWarnings: [],
+      switchSides: result.switchSides,
       savedAt: Date.now(),
     });
     resetTransientInputs();
@@ -2088,6 +2106,13 @@ export function App() {
     setNextSetDraft((current) => (current == null ? current : { ...current, left_team: teamKey }));
   }
 
+  function swapNextSetSides(): void {
+    setNextSetDraft((current) => {
+      const base = current ?? (nextSet == null ? null : cloneSetStartEvent(nextSet));
+      return base == null ? base : { ...base, left_team: other(base.left_team) };
+    });
+  }
+
   function resetNextSetEditor(): void {
     if (nextSet == null) {
       return;
@@ -2324,8 +2349,15 @@ export function App() {
 
         {nextSet != null ? (
           <div className="action-row">
-            <button type="button" className="action-big action-wide primary" onClick={() => appendEvent(nextSet)}>
+            <button
+              type="button"
+              className="action-big action-wide primary"
+              onClick={() => appendEvent({ ...nextSet, left_team: nextSetDraft?.left_team ?? nextSet.left_team })}
+            >
               Start set {nextSet.set_number}
+            </button>
+            <button type="button" className="action-big" onClick={swapNextSetSides}>
+              ⇄<small>left: {teamLabel(engine.teams, nextSetDraft?.left_team ?? nextSet.left_team)}</small>
             </button>
             <button type="button" className="action-big" onClick={() => setEditingNextSet(true)}>
               Edit lineups

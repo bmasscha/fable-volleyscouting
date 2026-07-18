@@ -46,12 +46,16 @@ export interface MatchSetupDraft {
   subsPerSet: number;
   liberoMayServe: boolean;
   autoLibero: boolean;
+  // false = VNL-style fixed courts: the next-set suggestion keeps the
+  // current sides and the deciding-set mid-set switch is disabled
+  switchSides: boolean;
   systems: Record<TeamKey, string>;
 }
 
 export interface MatchSetupResult {
   teams: Record<TeamKey, Team>;
   config: MatchConfig;
+  switchSides: boolean;
   setStartEvent: SetStartEvent;
 }
 
@@ -305,6 +309,7 @@ export function makeMatchSetupDraft(
     subsPerSet: previous?.subsPerSet ?? defaults.subs_per_set,
     liberoMayServe: previous?.liberoMayServe ?? defaults.libero_may_serve,
     autoLibero: previous?.autoLibero ?? defaults.auto_libero,
+    switchSides: previous?.switchSides ?? true,
     systems: previous?.systems ?? { ...defaults.systems },
   };
 }
@@ -408,6 +413,11 @@ export function buildMatchSetupResult(
     subs_per_set: normalizedBoundedInteger(draft.subsPerSet, 0, 20),
     libero_may_serve: draft.liberoMayServe,
     auto_libero: draft.autoLibero,
+    // fixed courts: push the deciding-set switch score out of reach so the
+    // engine never flips sides mid-set (the knob the engine already honors)
+    deciding_set_switch_at: draft.switchSides
+      ? defaults.deciding_set_switch_at
+      : Number.MAX_SAFE_INTEGER,
     systems: { ...draft.systems },
   };
   return {
@@ -418,6 +428,7 @@ export function buildMatchSetupResult(
         [AWAY]: cloneTeam(away),
       },
       config,
+      switchSides: draft.switchSides,
       setStartEvent: {
         type: "set_start",
         ts: null,
