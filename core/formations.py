@@ -153,6 +153,41 @@ _SERVE_BASE = {
     5: (-6.5, 4.6),
 }
 
+def overlap_violations(pos: dict[int, tuple[float, float]], side: str,
+                       exempt: tuple[int, ...] = ()) -> list[str]:
+    """FIVB 7.4-7.5 legality of a serve-contact position, as a list of
+    human-readable violation strings (empty list = legal).
+
+    This is the non-asserting twin of tests/test_formations.py's
+    ``assert_overlap_legal`` and MUST agree with it exactly, so any
+    chart the tests accept this reports as legal. Each front/back pair
+    (P2/P1, P3/P6, P4/P5) needs the front player strictly closer to the
+    net; each lateral pair (P2>P3>P4, P1>P6>P5) needs the first strictly
+    to the team's own right. "Closer" and "right" both depend on the
+    half: a left-side team faces east (net = larger x, right = larger
+    y), a right-side team faces west (both reversed). A pair with either
+    slot in `exempt` is skipped -- used for the server (slot 0), who is
+    off court behind the end line and outside the overlap at contact."""
+    def closer_to_net(a, b):
+        return a[0] > b[0] if side == "left" else a[0] < b[0]
+
+    def right_of(a, b):
+        return a[1] > b[1] if side == "left" else a[1] < b[1]
+
+    out: list[str] = []
+    for front, back in [(1, 0), (2, 5), (3, 4)]:      # P2/P1, P3/P6, P4/P5
+        if front in exempt or back in exempt:
+            continue
+        if not closer_to_net(pos[front], pos[back]):
+            out.append(f"P{front + 1} must be in front of P{back + 1}")
+    for right, left in [(1, 2), (2, 3), (0, 5), (5, 4)]:  # P2>P3>P4, P1>P6>P5
+        if right in exempt or left in exempt:
+            continue
+        if not right_of(pos[right], pos[left]):
+            out.append(f"P{right + 1} must be right of P{left + 1}")
+    return out
+
+
 def formation_xy(setter_slot: int | None, mode: Mode,
                  side: str) -> dict[int, tuple[float, float]]:
     """Court coordinates (metres) for lineup slots 0..5 (= P1..P6) of a
