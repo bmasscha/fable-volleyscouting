@@ -249,10 +249,76 @@ describe("TestSixSix", () => {
   });
 });
 
+// --- 3b. 6-6-p1: keyless system, P1 sets ---------------------------------
+describe("TestSixSixP1", () => {
+  test("test_chart_key_always_zero", () => {
+    const spec = SYSTEMS["6-6-p1"];
+    const allUniversal: Record<number, Role> = {};
+    for (const i of ALL_SLOTS) allUniversal[i] = U;
+    const withSetters: Record<number, Role> = { 0: S, 1: OH, 2: MB, 3: OPP, 4: OH, 5: L };
+    expect(chart_key(spec, allUniversal)).toBe(0);
+    expect(chart_key(spec, withSetters)).toBe(0);
+    expect(chart_key(spec, {})).toBe(0);
+  });
+
+  test("test_note_always_none", () => {
+    const spec = SYSTEMS["6-6-p1"];
+    const allUniversal: Record<number, Role> = {};
+    for (const i of ALL_SLOTS) allUniversal[i] = U;
+    const twoSettersSameRow: Record<number, Role> = { 0: S, 1: OH, 2: MB, 3: OH, 4: S, 5: L };
+    expect(system_note(spec, allUniversal)).toBeNull();
+    expect(system_note(spec, twoSettersSameRow)).toBeNull();
+    expect(system_note(spec, {})).toBeNull();
+  });
+
+  test("test_acting_setter_slot_is_p1", () => {
+    const spec = SYSTEMS["6-6-p1"];
+    const allUniversal: Record<number, Role> = {};
+    for (const i of ALL_SLOTS) allUniversal[i] = U;
+    expect(acting_setter_slot_for(spec, allUniversal)).toBe(0);
+    expect(acting_setter_slot_for(spec, {})).toBe(0);
+  });
+
+  test("test_all_universal_gets_the_w_chart_not_the_grid", () => {
+    const spec = SYSTEMS["6-6-p1"];
+    const allUniversal: Record<number, Role> = {};
+    for (const i of ALL_SLOTS) allUniversal[i] = U;
+    const pos = system_xy(spec, allUniversal, Mode.RECEIVE, LEFT);
+    const grid: Record<number, [number, number]> = {};
+    for (const i of ALL_SLOTS) grid[i] = position_xy(i, LEFT);
+    expect(pos).not.toEqual(grid);
+
+    const want: Record<number, [number, number]> = {};
+    for (const i of ALL_SLOTS) {
+      const [x, y] = spec.charts[Mode.RECEIVE]![0][i];
+      want[i] = [x, y];
+    }
+    expect(pos).toEqual(want);
+    expect(spec.charts[Mode.RECEIVE]![0][0]).toEqual([-6.8, 8.2]);
+  });
+
+  test("test_grid_mode_still_falls_back", () => {
+    const spec = SYSTEMS["6-6-p1"];
+    const allUniversal: Record<number, Role> = {};
+    for (const i of ALL_SLOTS) allUniversal[i] = U;
+    const pos = system_xy(spec, allUniversal, Mode.GRID, LEFT);
+    const expected: Record<number, [number, number]> = {};
+    for (const i of ALL_SLOTS) expected[i] = position_xy(i, LEFT);
+    expect(pos).toEqual(expected);
+  });
+
+  test("test_six_six_still_reports_acting_setter_slot_two", () => {
+    const spec = SYSTEMS["6-6"];
+    const allUniversal: Record<number, Role> = {};
+    for (const i of ALL_SLOTS) allUniversal[i] = U;
+    expect(acting_setter_slot_for(spec, allUniversal)).toBe(2);
+  });
+});
+
 // --- 4. registry lookups --------------------------------------------
 describe("TestRegistry", () => {
   test("test_known_ids", () => {
-    for (const systemId of ["5-1", "6-2", "6-6"]) {
+    for (const systemId of ["5-1", "6-2", "6-6", "6-6-p1"]) {
       expect(get_system(systemId).id).toBe(systemId);
     }
   });
@@ -267,7 +333,7 @@ describe("TestRegistry", () => {
   });
 
   test("test_system_ids_order", () => {
-    expect(system_ids()).toEqual(["5-1", "6-2", "6-6"]);
+    expect(system_ids()).toEqual(["5-1", "6-2", "6-6", "6-6-p1"]);
   });
 });
 
