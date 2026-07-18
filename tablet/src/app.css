@@ -1093,7 +1093,7 @@ p {
 .system-editor-svg {
   width: 100%;
   height: auto;
-  max-height: 60vh;
+  max-height: 75vh;
   touch-action: none;
   user-select: none;
 }

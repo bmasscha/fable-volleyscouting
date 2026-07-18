@@ -16,7 +16,7 @@ export default defineConfig({
         description: "Touch volleyball match scouting",
         start_url: ".",
         display: "standalone",
-        orientation: "landscape",
+        orientation: "any",
         background_color: "#16212b",
         theme_color: "#16212b",
         icons: [
