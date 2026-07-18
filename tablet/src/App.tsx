@@ -79,6 +79,7 @@ import {
   validateEditedSetStart,
 } from "./matchUi";
 import { ReportPanel, TrajectoryPanel } from "./matchInsights";
+import { SystemEditor } from "./SystemEditor";
 
 const RATING_OPTIONS = [Rating.ERROR, Rating.POOR, Rating.GOOD, Rating.PERFECT] as const;
 
@@ -850,7 +851,17 @@ function MatchSetupScreen({
   const [userSystems, setUserSystems] = useState<SystemSpec[]>(() => loadUserSystems());
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [importProblems, setImportProblems] = useState<string[]>([]);
+  const [editorOpen, setEditorOpen] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
+
+  // The single write path shared by import, the editor's Save, and remove:
+  // persist to storage, re-merge the registry (so the setup selects and the
+  // stored-systems list below update immediately), and update local state.
+  function persistUserSystems(nextList: SystemSpec[]): void {
+    saveUserSystems(nextList);
+    refresh_registry(nextList);
+    setUserSystems(nextList);
+  }
 
   const homeTeam = library.find((team) => team.name === draft.homeTeamName) ?? null;
   const awayTeam = library.find((team) => team.name === draft.awayTeamName) ?? null;
@@ -888,9 +899,7 @@ function MatchSetupScreen({
       merged.set(spec.id, spec);
     }
     const nextList = [...merged.values()];
-    saveUserSystems(nextList);
-    refresh_registry(nextList);
-    setUserSystems(nextList);
+    persistUserSystems(nextList);
     setImportProblems(problems);
     if (accepted.length > 0) {
       setImportMessage(`imported: ${[...new Set(accepted.map((spec) => spec.id))].join(", ")}`);
@@ -899,11 +908,18 @@ function MatchSetupScreen({
     }
   }
 
+  // The editor's Save commits the (replaced-or-appended) list through the
+  // same path the import flow uses, so setup selects and the stored list
+  // below refresh at once.
+  function commitEditedSystems(nextList: SystemSpec[]): void {
+    persistUserSystems(nextList);
+    setImportProblems([]);
+    setImportMessage(null);
+  }
+
   function removeUserSystem(systemId: string): void {
     const nextList = userSystems.filter((spec) => spec.id !== systemId);
-    saveUserSystems(nextList);
-    refresh_registry(nextList);
-    setUserSystems(nextList);
+    persistUserSystems(nextList);
     setImportMessage(null);
     setImportProblems([]);
     // A team pointing at the removed id must not show a dangling value.
@@ -1115,12 +1131,18 @@ function MatchSetupScreen({
               <div className="button-row compact">
                 <button
                   type="button"
+                  onClick={() => setEditorOpen(true)}
+                >
+                  Edit systems…
+                </button>
+                <button
+                  type="button"
                   onClick={() => importInputRef.current?.click()}
                 >
                   Import systems…
                 </button>
                 <span className="muted">
-                  Load custom playing systems exported from the desktop app.
+                  Create, or load custom playing systems exported from the desktop app.
                 </span>
                 <input
                   ref={importInputRef}
@@ -1320,6 +1342,14 @@ function MatchSetupScreen({
           </>
         )}
       </section>
+      {editorOpen ? (
+        <SystemEditor
+          userSystems={userSystems}
+          onCommitSystems={commitEditedSystems}
+          onDropSystem={removeUserSystem}
+          onClose={() => setEditorOpen(false)}
+        />
+      ) : null}
     </main>
   );
 }
