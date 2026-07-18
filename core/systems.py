@@ -28,9 +28,10 @@ time. Mode.GRID has no chart: it is always the rotational grid.
 
 5-1 and 6-2 differ only in label/description/expected_setters; their
 charts are generated at import time from core.formations' private
-tables so the two modules can never drift apart. 6-6 has no setter
-role at all -- the player standing at the net in zone 3 (P3) sets,
-so its charts are authored directly (see `_SIX_SIX_*` below).
+tables so the two modules can never drift apart. Keyless systems have
+no setter role at all -- some fixed lineup slot always sets (P3 for
+"6-6", P1 for "6-6-p1"), given by `SystemSpec.fixed_setter_slot`; their
+charts are authored directly (see `_SIX_SIX_*` below).
 """
 from __future__ import annotations
 
@@ -54,6 +55,9 @@ class SystemSpec:
     uses_setter_roles: bool   # False => roles ignored, chart key is 0
     expected_setters: int     # soft setup validation (0 for 6-6)
     charts: Charts
+    fixed_setter_slot: int | None = None  # acting setter's slot for
+                                          # keyless systems; None/ignored
+                                          # when uses_setter_roles
 
 
 # --- 5-1 / 6-2: generated from core.formations' private tables --------
@@ -117,6 +121,31 @@ _SIX_SIX_CHARTS: Charts = {
     Mode.DEFENSE: {0: _SIX_SIX_DEFENSE},
 }
 
+# --- 6-6 (P1 sets): no setter role -- whoever rotates through P1 -------
+# penetrates from the back right to set. Reception is a five-passer W
+# with P1 tucked short in the right-back corner, ready to run in;
+# defense is identical to the plain 6-6 chart (everyone digs/blocks the
+# zone they stand in).
+_SIX_SIX_P1_RECEIVE: Chart = {
+    0: (-6.8, 8.2),   # P1 hides right back, runs in to set
+    1: (-4.0, 7.0),   # P2 mid right passer
+    2: (-4.0, 4.5),   # P3 mid middle passer
+    3: (-4.0, 2.0),   # P4 mid left passer
+    4: (-7.5, 1.8),   # P5 deep left
+    5: (-7.5, 4.5),   # P6 deep middle
+}
+_SIX_SIX_P1_OFFENSE: Chart = {
+    0: (-1.6, 6.2), 1: (-3.4, 7.4), 2: (-2.6, 4.4),
+    3: (-3.4, 1.6), 4: (-6.8, 1.6), 5: (-6.8, 4.5),
+}
+_SIX_SIX_P1_DEFENSE: Chart = _SIX_SIX_DEFENSE
+_SIX_SIX_P1_CHARTS: Charts = {
+    Mode.RECEIVE: {0: _SIX_SIX_P1_RECEIVE},
+    Mode.SERVE_BASE: {0: {i: _SERVE_BASE[i] for i in range(1, 6)}},
+    Mode.OFFENSE: {0: _SIX_SIX_P1_OFFENSE},
+    Mode.DEFENSE: {0: _SIX_SIX_P1_DEFENSE},
+}
+
 
 # --- registry -----------------------------------------------------------
 SYSTEMS: dict[str, SystemSpec] = {
@@ -125,19 +154,25 @@ SYSTEMS: dict[str, SystemSpec] = {
         description="One setter plays every rotation; the opposite "
                     "always lines up across from them.",
         uses_setter_roles=True, expected_setters=1,
-        charts=_SETTER_KEYED_CHARTS),
+        charts=_SETTER_KEYED_CHARTS, fixed_setter_slot=None),
     "6-2": SystemSpec(
         id="6-2", label="6-2 (two setters)",
         description="Two setters, diagonal from each other; whichever "
                     "one is back row runs the offence.",
         uses_setter_roles=True, expected_setters=2,
-        charts=_SETTER_KEYED_CHARTS),
+        charts=_SETTER_KEYED_CHARTS, fixed_setter_slot=None),
     "6-6": SystemSpec(
         id="6-6", label="6-6 (no dedicated setter)",
         description="No setter role: whoever rotates through zone 3 "
                     "sets that rally.",
         uses_setter_roles=False, expected_setters=0,
-        charts=_SIX_SIX_CHARTS),
+        charts=_SIX_SIX_CHARTS, fixed_setter_slot=2),
+    "6-6-p1": SystemSpec(
+        id="6-6-p1", label="6-6 (P1 sets)",
+        description="No setter role: whoever rotates through P1 "
+                    "penetrates from the back right to set.",
+        uses_setter_roles=False, expected_setters=0,
+        charts=_SIX_SIX_P1_CHARTS, fixed_setter_slot=0),
 }
 DEFAULT_SYSTEM = "5-1"
 
@@ -193,8 +228,8 @@ def system_note(spec: SystemSpec, roles: dict[int, Role]) -> str | None:
 def acting_setter_slot_for(spec: SystemSpec,
                           roles: dict[int, Role]) -> int | None:
     """Lineup slot of whoever is setting this rally. Setter-keyed
-    systems delegate to role identification; a keyless 6-6 always has
-    the player standing at P3 (zone 3, at the net) set."""
+    systems delegate to role identification; a keyless system always
+    has the same fixed lineup slot set, per `spec.fixed_setter_slot`."""
     if not spec.uses_setter_roles:
-        return 2
+        return spec.fixed_setter_slot
     return acting_setter_slot(roles)

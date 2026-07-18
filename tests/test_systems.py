@@ -194,10 +194,58 @@ class TestSixSix:
         assert pos == {i: position_xy(i, LEFT) for i in ALL_SLOTS}
 
 
+# --- 3b. 6-6-p1: keyless system, P1 sets ---------------------------
+class TestSixSixP1:
+    def test_chart_key_always_zero(self):
+        spec = SYSTEMS["6-6-p1"]
+        all_universal = {i: U for i in ALL_SLOTS}
+        with_setters = {0: S, 1: OH, 2: MB, 3: OPP, 4: OH, 5: L}
+        assert chart_key(spec, all_universal) == 0
+        assert chart_key(spec, with_setters) == 0
+        assert chart_key(spec, {}) == 0
+
+    def test_note_always_none(self):
+        spec = SYSTEMS["6-6-p1"]
+        all_universal = {i: U for i in ALL_SLOTS}
+        two_setters_same_row = {0: S, 1: OH, 2: MB, 3: OH, 4: S, 5: L}
+        assert system_note(spec, all_universal) is None
+        assert system_note(spec, two_setters_same_row) is None
+        assert system_note(spec, {}) is None
+
+    def test_acting_setter_slot_is_p1(self):
+        spec = SYSTEMS["6-6-p1"]
+        all_universal = {i: U for i in ALL_SLOTS}
+        assert acting_setter_slot_for(spec, all_universal) == 0
+        assert acting_setter_slot_for(spec, {}) == 0
+
+    def test_all_universal_gets_the_w_chart_not_the_grid(self):
+        spec = SYSTEMS["6-6-p1"]
+        all_universal = {i: U for i in ALL_SLOTS}
+        pos = system_xy(spec, all_universal, Mode.RECEIVE, LEFT)
+        grid = {i: position_xy(i, LEFT) for i in ALL_SLOTS}
+        assert pos != grid
+        want = {i: formations.to_side(*spec.charts[Mode.RECEIVE][0][i],
+                                      LEFT) for i in ALL_SLOTS}
+        assert pos == want
+        assert spec.charts[Mode.RECEIVE][0][0] == (-6.8, 8.2)
+
+    def test_grid_mode_still_falls_back(self):
+        spec = SYSTEMS["6-6-p1"]
+        all_universal = {i: U for i in ALL_SLOTS}
+        pos = system_xy(spec, all_universal, Mode.GRID, LEFT)
+        assert pos == {i: position_xy(i, LEFT) for i in ALL_SLOTS}
+
+    def test_six_six_still_reports_acting_setter_slot_two(self):
+        # Regression on the fixed_setter_slot refactor: plain 6-6 keeps
+        # its P3-sets behaviour unchanged.
+        spec = SYSTEMS["6-6"]
+        assert acting_setter_slot_for(spec, {i: U for i in ALL_SLOTS}) == 2
+
+
 # --- 4. registry lookups -------------------------------------------
 class TestRegistry:
     def test_known_ids(self):
-        for system_id in ("5-1", "6-2", "6-6"):
+        for system_id in ("5-1", "6-2", "6-6", "6-6-p1"):
             assert get_system(system_id).id == system_id
 
     def test_unknown_id_falls_back_to_default(self):
@@ -207,7 +255,7 @@ class TestRegistry:
         assert get_system(None).id == DEFAULT_SYSTEM
 
     def test_system_ids_order(self):
-        assert system_ids() == ["5-1", "6-2", "6-6"]
+        assert system_ids() == ["5-1", "6-2", "6-6", "6-6-p1"]
 
 
 # --- 5. MatchConfig round-trip -------------------------------------
