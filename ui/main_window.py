@@ -69,6 +69,7 @@ class MainWindow(QMainWindow):
         self._transient_warning = ""
         self.formations_enabled = True   # realistic 5-1 positions vs grid
         self.charts_dialog = None        # non-modal trajectory charts
+        self.system_editor = None        # non-modal playing-system editor
 
         self._build_ui()
         self._build_shortcuts()
@@ -92,12 +93,15 @@ class MainWindow(QMainWindow):
                            ("Next set", self.next_set),
                            ("Adjust", self.open_adjust),
                            ("Report", self.open_report),
-                           ("Charts", self.open_charts)):
+                           ("Charts", self.open_charts),
+                           ("System editor", self.open_system_editor)):
             act = QAction(text, self)
             act.triggered.connect(slot)
             tb.addAction(act)
             if text == "Next set":
                 self.next_set_action = act
+            elif text == "System editor":
+                self.system_editor_action = act
         self.formations_action = QAction("Formations", self)
         self.formations_action.setCheckable(True)
         self.formations_action.setChecked(True)
@@ -108,26 +112,12 @@ class MainWindow(QMainWindow):
 
         self.system_buttons: dict[str, QToolButton] = {}
         self.system_actions: dict[str, dict[str, QAction]] = {HOME: {}, AWAY: {}}
-        for tk, label in ((HOME, "Home"), (AWAY, "Away")):
+        for tk in (HOME, AWAY):
             btn = QToolButton()
             btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-            menu = QMenu(btn)
-            group = QActionGroup(btn)
-            group.setExclusive(True)
-            for sid in system_ids():
-                spec = SYSTEMS[sid]
-                act = QAction(spec.label, btn)
-                act.setCheckable(True)
-                act.setToolTip(spec.description)
-                act.triggered.connect(
-                    lambda _=False, t=tk, s=sid: self._on_system_selected(t, s))
-                group.addAction(act)
-                menu.addAction(act)
-                self.system_actions[tk][sid] = act
-            btn.setMenu(menu)
             self.system_buttons[tk] = btn
             tb.addWidget(btn)
-        self._sync_system_buttons()
+        self._rebuild_system_menus()
 
         self.roles_action = QAction("Show Roles", self)
         self.roles_action.setCheckable(True)
@@ -697,6 +687,48 @@ class MainWindow(QMainWindow):
     def _on_formations_toggled(self, checked: bool) -> None:
         self.formations_enabled = checked
         self.refresh()
+
+    def _rebuild_system_menus(self) -> None:
+        """(Re)build both per-team system pickers from the current registry.
+        Called once at startup and again after the system editor saves or
+        deletes a system, so a newly authored system is immediately
+        selectable. Built-in entries keep their exact label/tooltip/slot."""
+        for tk in (HOME, AWAY):
+            btn = self.system_buttons[tk]
+            menu = QMenu(btn)
+            group = QActionGroup(btn)
+            group.setExclusive(True)
+            self.system_actions[tk] = {}
+            for sid in system_ids():
+                spec = SYSTEMS[sid]
+                act = QAction(spec.label, btn)
+                act.setCheckable(True)
+                act.setToolTip(spec.description)
+                act.triggered.connect(
+                    lambda _=False, t=tk, s=sid: self._on_system_selected(t, s))
+                group.addAction(act)
+                menu.addAction(act)
+                self.system_actions[tk][sid] = act
+            btn.setMenu(menu)
+        self._sync_system_buttons()
+
+    def open_system_editor(self) -> None:
+        """Open the one non-modal playing-system editor (lazily created,
+        re-raised if already open). Always available -- no match needed."""
+        if self.system_editor is None:
+            from .system_editor import SystemEditorWindow
+            self.system_editor = SystemEditorWindow(parent=self)
+            self.system_editor.systems_changed.connect(self._on_systems_changed)
+        self.system_editor.show()
+        self.system_editor.raise_()
+        self.system_editor.activateWindow()
+
+    def _on_systems_changed(self) -> None:
+        """A system was saved or deleted: the registry has already been
+        refreshed, so rebuild the menus (and re-sync the buttons) to reflect
+        it. A team pointing at a since-deleted id keeps its stored id and
+        degrades to the default geometry at render time (get_system)."""
+        self._rebuild_system_menus()
 
     def _on_system_selected(self, team_key: str, system_id: str) -> None:
         self.config.systems[team_key] = system_id
