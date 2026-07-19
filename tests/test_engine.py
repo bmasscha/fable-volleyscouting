@@ -295,10 +295,12 @@ class TestAttackAndDig:
         assert engine.state.phase == Phase.DEFENSE
         assert engine.state.attacking_team == AWAY
 
-    def test_attack_by_wrong_team_warns(self, engine):
+    def test_attack_by_wrong_team_is_silent_takeover(self, engine):
         self.rally_to_attack(engine)
-        w = attack(engine, HOME, Rating.GOOD)                 # AWAY has the ball
-        assert any("has the ball" in x for x in w)
+        w = attack(engine, HOME, Rating.GOOD)                 # AWAY had the ball
+        assert w == []
+        assert engine.state.phase == Phase.DEFENSE
+        assert engine.state.attacking_team == HOME
 
     def test_dig_error_is_point_for_attackers(self, engine):
         self.rally_to_attack(engine)
@@ -349,11 +351,21 @@ class TestAttackAndDig:
         assert engine.state.scores == {HOME: 1, AWAY: 0}
         assert engine.state.phase == Phase.AWAIT_SERVE
 
-    def test_same_team_attacking_again_from_defense_warns(self, engine):
+    def test_same_team_attacking_again_from_defense_is_silent(self, engine):
         self.rally_to_attack(engine)
         attack(engine, AWAY, Rating.GOOD)                     # -> DEFENSE
-        w = attack(engine, AWAY, Rating.GOOD)                 # AWAY again: not a dig
-        assert any("attack entered during phase" in x for x in w)
+        w = attack(engine, AWAY, Rating.GOOD)                 # AWAY again: missed opponent's play
+        assert w == []
+        assert engine.state.phase == Phase.DEFENSE
+        assert engine.state.attacking_team == AWAY
+
+    def test_same_team_attack_kill_from_defense_scores(self, engine):
+        self.rally_to_attack(engine)
+        attack(engine, AWAY, Rating.GOOD)                     # -> DEFENSE
+        w = attack(engine, AWAY, Rating.PERFECT)              # AWAY kill, same team twice
+        assert w == []
+        assert engine.state.scores == {HOME: 0, AWAY: 1}
+        assert engine.state.phase == Phase.AWAIT_SERVE
 
     def test_long_rally_alternates_correctly(self, engine):
         self.rally_to_attack(engine)

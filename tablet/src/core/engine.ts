@@ -412,17 +412,19 @@ export class MatchEngine {
   _on_attack(e: AttackEvent): string[] {
     const w: string[] = [];
     const st = this.state;
-    if (st.phase === Phase.DEFENSE
-        && e.team === other(st.attacking_team ?? e.team)) {
-      // scouter skipped rating the dig -- implicit unrated defense touch
+    if (st.phase === Phase.DEFENSE) {
+      // scouter skipped touches -- either the unrated dig (other team
+      // attacks) or the whole opposing counter-attack (same team
+      // attacks again). Both are legitimate fast-rally shorthand.
       st.attacking_team = e.team;
       st.phase = Phase.ATTACK;
     }
     if (st.phase !== Phase.ATTACK) {
       w.push(`attack entered during phase '${st.phase}'`);
     } else if (st.attacking_team && e.team !== st.attacking_team) {
-      w.push(`attack charged to ${this.teams[e.team].name} but `
-        + `${this.teams[st.attacking_team].name} has the ball`);
+      // scouter missed the holding team's attack: possession simply
+      // follows the drawn attack, no warning
+      st.attacking_team = e.team;
     }
     if (e.rating === Rating.PERFECT) { // kill
       this._award_point(e.team);

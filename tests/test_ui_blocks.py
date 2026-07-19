@@ -101,7 +101,9 @@ def test_unrated_second_drag_finalizes_previous_as_good(win):
     # tip), finalizes the previous attack as the default '+' (in play) and
     # primes the opponent's counter-attack -- letting a fast rally be
     # charted without stopping to score each contact
-    win.on_trajectory(3.0, 2.0, 4.0, 3.0)
+    # the second drag starts on HOME's (left) half, so it is HOME's
+    # counter-attack (team is now inferred from where the drag starts)
+    win.on_trajectory(-3.0, 2.0, 4.0, 3.0)
     assert len(win.engine.events) == n + 1      # previous attack committed
     ev = win.engine.events[-1]
     assert isinstance(ev, AttackEvent)
@@ -113,7 +115,7 @@ def test_unrated_second_drag_finalizes_previous_as_good(win):
     assert win.engine.state.phase == Phase.DEFENSE
     assert win.pending_attack is not None
     assert win.pending_attack[0] == HOME
-    assert win.pending_attack[2] == (3.0, 2.0, 4.0, 3.0)
+    assert win.pending_attack[2] == (-3.0, 2.0, 4.0, 3.0)
     # the formations flip to the pending attacker at once: HOME (now
     # counter-attacking) shows offence, AWAY drops to defence
     assert win._team_mode(HOME) == Mode.OFFENSE

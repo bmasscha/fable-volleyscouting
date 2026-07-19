@@ -378,9 +378,11 @@ def scripted_warnings() -> tuple[MatchConfig, dict, list]:
         ServeEvent(team=AWAY, player_id=a[1]),          # wrong team + player
         ReceptionEvent(team=HOME, player_id=h[4],       # after wrong serve the
                        rating=Rating.GOOD),             # server side receives
-        AttackEvent(team=AWAY, player_id=a[2], rating=Rating.GOOD),
+        AttackEvent(team=AWAY, player_id=a[2], rating=Rating.GOOD),  # wrong
+        # team attacks -- silent possession takeover, no warning
         DigEvent(team=AWAY, player_id=a[5], rating=Rating.GOOD),  # own attack
-        AttackEvent(team=HOME, player_id=h[2], rating=Rating.PERFECT),
+        AttackEvent(team=HOME, player_id=h[2], rating=Rating.PERFECT),  # wrong
+        # team attacks again -- silent takeover, kill scores for Home Hawks
         SubstitutionEvent(team=HOME, player_out="H12", player_in=h[0]),
         LiberoSwapEvent(team=HOME, libero_id="H7", partner_id=h[1]),
         LiberoSwapEvent(team=HOME, libero_id=lib_h, partner_id=h[1]),
@@ -435,6 +437,39 @@ def scripted_blocks() -> tuple[MatchConfig, dict, list]:
                        block_touch=(-0.4, 5.0)),
            AttackEvent(team=HOME, player_id=h[4], rating=Rating.GOOD,
                        trajectory=(-3.0, 6.0, 6.0, 2.0))]
+    return config, teams, ev
+
+
+def scripted_consecutive_attacks() -> tuple[MatchConfig, dict, list]:
+    """Pins the two attack warnings retired for fast-rally shorthand
+    (scouters often miss the opponent's touches when the ball goes back
+    and forth quickly): the same team attacking again straight from
+    DEFENSE (missed the whole opposing counter-attack, repeated twice),
+    and a mid-ATTACK-phase possession swap (missed the holding team's
+    attack entirely). Zero warnings expected throughout."""
+    config = MatchConfig()
+    teams = build_teams()
+    h = starters(teams, HOME)
+    a = starters(teams, AWAY)
+    ev: list = [first_set_start(teams)]                # HOME serves from LEFT
+
+    # rally 1: AWAY attacks three times in a row without a single HOME touch
+    # being recorded (silent, same team twice then a third time), then HOME
+    # attacks twice in a row (implicit dig, then a kill) -- all silent.
+    ev += [ServeEvent(team=HOME, player_id=h[0], rating=Rating.GOOD),
+           ReceptionEvent(team=AWAY, player_id=a[0], rating=Rating.GOOD),
+           AttackEvent(team=AWAY, player_id=a[1], rating=Rating.GOOD),  # -> DEFENSE
+           AttackEvent(team=AWAY, player_id=a[2], rating=Rating.GOOD),  # same team again
+           AttackEvent(team=AWAY, player_id=a[3], rating=Rating.GOOD),  # same team a 3rd time
+           AttackEvent(team=HOME, player_id=h[1], rating=Rating.GOOD),  # implicit dig
+           AttackEvent(team=HOME, player_id=h[2], rating=Rating.PERFECT)]  # same team kill -> HOME point
+
+    # rally 2: HOME keeps serve (point was won while already serving); AWAY
+    # receives and is on attack, but HOME attacks straight from ATTACK phase
+    # -- the scouter missed AWAY's actual attack, silent possession takeover.
+    ev += [ServeEvent(team=HOME, player_id=h[0], rating=Rating.GOOD),
+           ReceptionEvent(team=AWAY, player_id=a[0], rating=Rating.GOOD),
+           AttackEvent(team=HOME, player_id=h[3], rating=Rating.GOOD)]
     return config, teams, ev
 
 
@@ -543,6 +578,8 @@ def main() -> None:
     fixtures.append(run_fixture("scripted-warnings", cfg, teams, ev))
     cfg, teams, ev = scripted_blocks()
     fixtures.append(run_fixture("scripted-blocks", cfg, teams, ev))
+    cfg, teams, ev = scripted_consecutive_attacks()
+    fixtures.append(run_fixture("scripted-consecutive-attacks", cfg, teams, ev))
     cfg, teams, ev = scripted_libero()
     fixtures.append(run_fixture("scripted-libero", cfg, teams, ev))
     cfg, teams, ev = scripted_unregistered_libero()

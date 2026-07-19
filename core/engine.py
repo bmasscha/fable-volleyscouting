@@ -335,15 +335,18 @@ class MatchEngine:
     def _on_attack(self, e: AttackEvent) -> list[str]:
         w: list[str] = []
         st = self.state
-        if st.phase == Phase.DEFENSE and e.team == other(st.attacking_team or e.team):
-            # scouter skipped rating the dig -- implicit unrated defense touch
+        if st.phase == Phase.DEFENSE:
+            # scouter skipped touches -- either the unrated dig (other team
+            # attacks) or the whole opposing counter-attack (same team
+            # attacks again). Both are legitimate fast-rally shorthand.
             st.attacking_team = e.team
             st.phase = Phase.ATTACK
         if st.phase not in (Phase.ATTACK,):
             w.append(f"attack entered during phase '{st.phase.value}'")
         elif st.attacking_team and e.team != st.attacking_team:
-            w.append(f"attack charged to {self.teams[e.team].name} but "
-                     f"{self.teams[st.attacking_team].name} has the ball")
+            # scouter missed the holding team's attack: possession simply
+            # follows the drawn attack, no warning
+            st.attacking_team = e.team
         if e.rating == Rating.PERFECT:                    # kill (incl. block-out)
             self._award_point(e.team)
         elif e.rating == Rating.ERROR:                    # out / net / blocked down

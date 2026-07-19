@@ -298,11 +298,12 @@ class MainWindow(QMainWindow):
             # scouter drew the next attack without rating the previous one:
             # finalize it with the default '+' (in play) so a fast rally can
             # be charted at full speed, then let this drag start the next
-            # attack. A GOOD attack sends the engine to DEFENSE, so the branch
-            # below primes the counter-attack for the other team.
+            # attack. The team for that next attack is whoever's half the new
+            # drag starts from, not the digger _finalize_pending_attack just
+            # preselected by the landing -- so the scouter may freely chart
+            # consecutive attacks by the same team when the opponent's play
+            # went unrecorded.
             self._finalize_pending_attack(Rating.GOOD)
-            # the counter-attacker is whoever the new drag starts from, not the
-            # digger _finalize_pending_attack just preselected by the landing
             self.candidate = None
             st = self.engine.state
         if st.phase == Phase.AWAIT_SERVE:
@@ -326,11 +327,11 @@ class MainWindow(QMainWindow):
             self._append(ReceptionEvent(recv, receiver, Rating.GOOD))
             self.candidate = None      # attacker gets picked from the drag
             self._begin_pending_attack(recv, traj)
-        elif st.phase == Phase.ATTACK:
-            self._begin_pending_attack(st.attacking_team, traj)
-        elif st.phase == Phase.DEFENSE:
-            # counter-attack with implicit unrated dig
-            self._begin_pending_attack(other(st.attacking_team), traj)
+        elif st.phase in (Phase.ATTACK, Phase.DEFENSE):
+            # the attack belongs to whichever team's half the drag starts
+            # from -- the scouter may chart consecutive attacks by the same
+            # team when the opponent's play went unrecorded
+            self._begin_pending_attack(self._team_on_half(x1), traj)
 
     def _try_block_deflection(self, x1: float, y1: float,
                               x2: float, y2: float) -> bool:
@@ -753,6 +754,9 @@ class MainWindow(QMainWindow):
 
     def _on_roles_toggled(self, checked: bool) -> None:
         self.refresh()
+
+    def _team_on_half(self, x: float) -> str:
+        return self.engine.team_on_side(LEFT if x < 0 else RIGHT)
 
     def _nearest(self, team_key: str, x: float, y: float) -> str:
         best, best_d = None, 1e9

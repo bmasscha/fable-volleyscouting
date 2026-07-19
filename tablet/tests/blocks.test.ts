@@ -170,6 +170,43 @@ describe("engine flows", () => {
   });
 });
 
+// -------------------------------------------------- consecutive attacks
+// Mirrors tests/test_engine.py::TestAttackAndDig's silent-takeover cases:
+// scouters chart fast rallies by drawing whichever attack they actually
+// saw, and possession simply follows the drawn team -- no warnings.
+
+describe("consecutive attacks", () => {
+  test("attack by wrong team in ATTACK phase is a silent takeover", () => {
+    const engine = make_engine();
+    // engine is in ATTACK phase with AWAY holding the ball; HOME draws
+    // the attack instead (the scouter missed AWAY's touch)
+    const w = engine.append({ type: "attack", team: HOME, player_id: engine.state.team[HOME].lineup[1]!, rating: Rating.GOOD });
+    expect(w).toEqual([]);
+    expect(engine.state.phase).toBe(Phase.DEFENSE);
+    expect(engine.state.attacking_team).toBe(HOME);
+  });
+
+  test("same team attacking again from DEFENSE is silent", () => {
+    const engine = make_engine();
+    engine.append({ type: "attack", team: AWAY, player_id: engine.state.team[AWAY].lineup[1]!, rating: Rating.GOOD }); // -> DEFENSE
+    // AWAY attacks again: the scouter missed HOME's entire counter-attack
+    const w = engine.append({ type: "attack", team: AWAY, player_id: engine.state.team[AWAY].lineup[2]!, rating: Rating.GOOD });
+    expect(w).toEqual([]);
+    expect(engine.state.phase).toBe(Phase.DEFENSE);
+    expect(engine.state.attacking_team).toBe(AWAY);
+  });
+
+  test("PERFECT kill on a second consecutive same-team attack scores", () => {
+    const engine = make_engine();
+    const before = engine.state.scores[AWAY];
+    engine.append({ type: "attack", team: AWAY, player_id: engine.state.team[AWAY].lineup[1]!, rating: Rating.GOOD }); // -> DEFENSE
+    const w = engine.append({ type: "attack", team: AWAY, player_id: engine.state.team[AWAY].lineup[2]!, rating: Rating.PERFECT }); // AWAY kill, same team twice
+    expect(w).toEqual([]);
+    expect(engine.state.scores[AWAY]).toBe(before + 1);
+    expect(engine.state.phase).toBe(Phase.AWAIT_SERVE);
+  });
+});
+
 // ---------------------------------------------------------- serialization
 
 describe("serialization", () => {

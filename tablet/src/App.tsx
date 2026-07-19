@@ -66,6 +66,7 @@ import {
   nearestPlayerId,
   recentCourtTrajectories,
   serveIsOut,
+  teamOnHalf,
   teamRoles,
   trajectoriesExpired,
 } from "./courtState";
@@ -1769,13 +1770,11 @@ export function App() {
     // two-stroke deflection path below.
     if (pendingAttack == null && vertex != null && Math.abs(vertex[0]) <= BLOCK_NET_ZONE) {
       const phase = engine.state.phase;
-      const team = phase === Phase.ATTACK
-        ? attackingTeam
-        : phase === Phase.DEFENSE
-          ? diggingTeam
-          : phase === Phase.RECEPTION
-            ? receivingTeam
-            : null;
+      const team = phase === Phase.ATTACK || phase === Phase.DEFENSE
+        ? teamOnHalf(engine.state, x1)
+        : phase === Phase.RECEPTION
+          ? receivingTeam
+          : null;
       if (team != null) {
         const attacker = candidate?.teamKey === team
           ? candidate.playerId
@@ -1873,10 +1872,11 @@ export function App() {
         Number(x2.toFixed(2)), Number(y2.toFixed(2)),
       ];
       if (preview != null && preview.state.phase === Phase.DEFENSE) {
-        // a GOOD attack in play hands the ball to the other team; this drag
-        // is their counter-attack. Its attacker is whoever the line starts
-        // from (nearest the drag origin), not the digger by the landing.
-        primePendingAttack(preview, other(preview.state.attacking_team!), newTrajectory);
+        // a GOOD attack in play hands the ball to the other team, but the
+        // scouter may instead be charting the same team's next attack (a
+        // missed fast-rally touch) -- the team follows whichever half this
+        // new drag starts from, not the previous attacker's opponent.
+        primePendingAttack(preview, teamOnHalf(preview.state, x1), newTrajectory);
       } else {
         setCandidate(null);
       }
@@ -1937,12 +1937,12 @@ export function App() {
     }
 
     if (engine.state.phase === Phase.ATTACK) {
-      primePendingAttack(engine, attackingTeam, trajectory);
+      primePendingAttack(engine, teamOnHalf(engine.state, x1), trajectory);
       return;
     }
 
     if (engine.state.phase === Phase.DEFENSE) {
-      primePendingAttack(engine, diggingTeam, trajectory);
+      primePendingAttack(engine, teamOnHalf(engine.state, x1), trajectory);
     }
   }
 

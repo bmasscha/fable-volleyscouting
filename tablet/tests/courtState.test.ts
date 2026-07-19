@@ -12,6 +12,7 @@ import {
   nearestPlayerId,
   recentCourtTrajectories,
   serveIsOut,
+  teamOnHalf,
   trajectoriesExpired,
 } from "../src/courtState";
 
@@ -196,5 +197,18 @@ describe("court state helpers", () => {
 
     engine.undo();
     expect(trajectoriesExpired(engine)).toBe(false); // undo reopens the rally
+  });
+
+  test("teamOnHalf picks the team occupying the drag's starting x", () => {
+    const leftHome = makeEngine(HOME, HOME);   // left_team = HOME
+    const leftAway = makeEngine(AWAY, HOME);   // left_team = AWAY
+
+    expect(teamOnHalf(leftHome.state, -3)).toBe(HOME);  // negative x -> left half
+    expect(teamOnHalf(leftHome.state, 3)).toBe(AWAY);   // positive x -> right half
+    expect(teamOnHalf(leftHome.state, 0)).toBe(AWAY);   // boundary -> right team
+
+    expect(teamOnHalf(leftAway.state, -3)).toBe(AWAY);
+    expect(teamOnHalf(leftAway.state, 3)).toBe(HOME);
+    expect(teamOnHalf(leftAway.state, 0)).toBe(HOME);
   });
 });

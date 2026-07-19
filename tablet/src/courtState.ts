@@ -1,4 +1,4 @@
-import { MatchEngine, Phase } from "./core/engine";
+import { MatchEngine, MatchState, Phase } from "./core/engine";
 import { MatchEvent, Trajectory } from "./core/events";
 import { Mode, acting_setter_slot } from "./core/formations";
 import { Role, TeamKey, TEAM_KEYS, other, team_player } from "./core/models";
@@ -41,6 +41,12 @@ export interface CourtTrajectorySpec {
 export const SETTER_TOKEN_COLOR = "#1565c0";
 export const LIBERO_TOKEN_COLOR = "#c62828";
 export const OUT_TOLERANCE = 0.4;
+
+/** Which team occupies the court half a given x-coordinate falls in. Net is
+ * at x = 0; the LEFT half is x < 0 (x = 0 counts as the right half). */
+export function teamOnHalf(state: MatchState, x: number): TeamKey {
+  return x < 0 ? state.left_team : other(state.left_team);
+}
 
 export function teamMode(
   engine: MatchEngine,
