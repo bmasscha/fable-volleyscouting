@@ -129,7 +129,7 @@ export function VideoReview({ match, onBack }: VideoReviewProps) {
         host: "https://www.youtube-nocookie.com",
         // origin is required for the iframe API's postMessage bridge to work on
         // a third-party host (github.io); without it seek/play/pause no-op.
-        playerVars: { controls: 1, rel: 0, modestbranding: 1, origin: window.location.origin },
+        playerVars: { controls: 1, rel: 0, modestbranding: 1, playsinline: 1, origin: window.location.origin },
         events: { onReady: () => { if (!cancelled) setYtReady(true); } },
       });
     });
@@ -312,6 +312,10 @@ export function VideoReview({ match, onBack }: VideoReviewProps) {
         )}s`
       : null;
 
+  // Memoize the YouTube host container so Preact never diffs its children 
+  // (which would remove the iframe that YouTube's API inserts).
+  const ytHostNode = useMemo(() => <div className="vr-yt" ref={ytHostRef} />, []);
+
   return (
     <main className="shell video-review">
       <section className="startup-card video-review-card">
@@ -371,7 +375,7 @@ export function VideoReview({ match, onBack }: VideoReviewProps) {
           {/* player */}
           <div className="vr-player">
             {link.source_kind === YOUTUBE ? (
-              <div className="vr-yt" ref={ytHostRef} />
+              ytHostNode
             ) : objectUrl != null ? (
               <video ref={videoRef} src={objectUrl} controls className="vr-video" />
             ) : (
