@@ -259,6 +259,53 @@ select {
   cursor: pointer;
 }
 
+.vr-sync {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.6rem 0.7rem;
+  border-radius: 10px;
+  background: #10202a;
+}
+
+.vr-sync-target {
+  overflow-wrap: anywhere;
+}
+
+.vr-yt-open {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.5rem 0.8rem;
+  border-radius: 10px;
+  background: #1d3440;
+  color: inherit;
+  text-decoration: none;
+}
+
+.vr-anchors {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.vr-anchor-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.vr-anchor-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.vr-anchor-del {
+  padding: 0.2rem 0.5rem;
+  font-size: 0.85em;
+}
+
 .vr-clips-header {
   display: flex;
   align-items: center;

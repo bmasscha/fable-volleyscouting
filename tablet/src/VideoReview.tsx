@@ -86,6 +86,7 @@ export function VideoReview({ match, onBack }: VideoReviewProps) {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [ytUrl, setYtUrl] = useState("");
+  const [ytReady, setYtReady] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const ytHostRef = useRef<HTMLDivElement | null>(null);
@@ -112,16 +113,34 @@ export function VideoReview({ match, onBack }: VideoReviewProps) {
       return;
     }
     let cancelled = false;
+    setYtReady(false);
     loadYouTubeApi().then(() => {
       if (cancelled || ytHostRef.current == null) return;
       const YT = (window as unknown as { YT: { Player: new (el: HTMLElement, cfg: unknown) => YTPlayer } }).YT;
-      ytPlayerRef.current = new YT.Player(ytHostRef.current, {
+      // YT.Player *replaces* the element we hand it with an <iframe>. Give it a
+      // throwaway child so Preact keeps owning the wrapper div and never tries
+      // to reconcile the node YouTube swapped out (which silently kills the
+      // player -- the cause of "Load does nothing").
+      ytHostRef.current.innerHTML = "";
+      const host = document.createElement("div");
+      ytHostRef.current.appendChild(host);
+      ytPlayerRef.current = new YT.Player(host, {
         videoId: link.source_ref,
-        playerVars: { controls: 1, rel: 0, modestbranding: 1 },
+        host: "https://www.youtube-nocookie.com",
+        // origin is required for the iframe API's postMessage bridge to work on
+        // a third-party host (github.io); without it seek/play/pause no-op.
+        playerVars: { controls: 1, rel: 0, modestbranding: 1, origin: window.location.origin },
+        events: { onReady: () => { if (!cancelled) setYtReady(true); } },
       });
     });
     return () => {
       cancelled = true;
+      setYtReady(false);
+      try {
+        (ytPlayerRef.current as unknown as { destroy?: () => void } | null)?.destroy?.();
+      } catch {
+        /* player may already be torn down */
+      }
       ytPlayerRef.current = null;
     };
   }, [link.source_kind, link.source_ref]);
@@ -134,7 +153,7 @@ export function VideoReview({ match, onBack }: VideoReviewProps) {
   const player = useCallback((): PlayerHandle | null => {
     if (link.source_kind === YOUTUBE) {
       const p = ytPlayerRef.current;
-      if (p == null || typeof p.getCurrentTime !== "function") return null;
+      if (p == null || !ytReady || typeof p.getCurrentTime !== "function") return null;
       return {
         seek: (s) => p.seekTo(s, true),
         play: () => p.playVideo(),
@@ -150,7 +169,7 @@ export function VideoReview({ match, onBack }: VideoReviewProps) {
       pause: () => v.pause(),
       currentTime: () => v.currentTime,
     };
-  }, [link.source_kind]);
+  }, [link.source_kind, ytReady]);
 
   // Stop each clip at its end; chain the queue for "Play all".
   useEffect(() => {
@@ -196,11 +215,24 @@ export function VideoReview({ match, onBack }: VideoReviewProps) {
     return rows;
   }, [match]);
 
+  function actionLabel(a: Action): string {
+    const teamName = match.teams[a.team_key]?.name ?? a.team_key;
+    return `S${a.set_number} · ${teamName} #${a.player_number ?? "?"} ${a.skill} ${a.rating}`;
+  }
+
   function playAction(a: Action): void {
-    const window_ = clip_window(link, a.ts);
     const p = player();
-    if (window_ == null || p == null) {
-      setMessage("Load a video and set a sync anchor first (tap an action, seek the video to it, then “Sync here”).");
+    if (p == null) {
+      setMessage(
+        link.source_kind === YOUTUBE && Boolean(link.source_ref)
+          ? "The video is still loading — give it a moment, then try again."
+          : "Load a video first (choose a file or paste a YouTube URL).",
+      );
+      return;
+    }
+    const window_ = clip_window(link, a.ts);
+    if (window_ == null) {
+      setMessage("No sync anchor yet — tap this action, scrub the video to that moment, then “Sync here”.");
       return;
     }
     setMessage(null);
@@ -217,7 +249,10 @@ export function VideoReview({ match, onBack }: VideoReviewProps) {
   }
 
   function playAll(): void {
-    if (filtered.length === 0) return;
+    if (filtered.length === 0) {
+      setMessage("No matching actions to play — widen the filters.");
+      return;
+    }
     queueRef.current = filtered.slice(1).map((a) => a.index);
     setSelectedIndex(filtered[0]!.index);
     playAction(filtered[0]!);
@@ -239,24 +274,43 @@ export function VideoReview({ match, onBack }: VideoReviewProps) {
       setMessage("That does not look like a YouTube URL.");
       return;
     }
-    setMessage(null);
+    setMessage("Loading the YouTube video…");
+    setYtReady(false);
     ytPlayerRef.current = null;
     persist({ ...link, source_kind: YOUTUBE, source_ref: id });
   }
 
   function syncHere(): void {
-    const a = selectedIndex == null ? null : actions.find((x) => x.index === selectedIndex);
+    const a = selectedAction;
     const p = player();
-    if (a == null || a.ts == null || p == null) {
-      setMessage("Tap the action you are looking at, pause the video there, then Sync here.");
+    if (a == null || a.ts == null) {
+      setMessage("First tap the action you are looking at in the list, then Sync here.");
       return;
     }
-    const anchor: Anchor = { event_ts: a.ts, video_seconds: p.currentTime() };
+    if (p == null) {
+      setMessage("The video is still loading — wait a moment, then Sync here.");
+      return;
+    }
+    const at = p.currentTime();
+    const anchor: Anchor = { event_ts: a.ts, video_seconds: at };
     persist({ ...link, anchors: [...link.anchors, anchor] });
-    setMessage(`Anchor set (${link.anchors.length + 1} total).`);
+    setMessage(`✓ Synced “${actionLabel(a)}” to video ${fmtTime(at)} — ${link.anchors.length + 1} anchor(s) set.`);
   }
 
+  function removeAnchor(i: number): void {
+    persist({ ...link, anchors: link.anchors.filter((_, idx) => idx !== i) });
+  }
+
+  const selectedAction = selectedIndex == null ? null : actions.find((x) => x.index === selectedIndex) ?? null;
   const hasSource = Boolean(link.source_ref) && (link.source_kind !== FILE || objectUrl != null);
+  const canSync = hasSource && selectedAction != null && (link.source_kind !== YOUTUBE || ytReady);
+  const ytDeepLink =
+    link.source_kind === YOUTUBE && link.source_ref && selectedAction != null
+      ? `https://www.youtube.com/watch?v=${link.source_ref}&t=${Math.max(
+          0,
+          Math.floor((event_to_video_time(link, selectedAction.ts) ?? 0) - link.pre_roll),
+        )}s`
+      : null;
 
   return (
     <main className="shell video-review">
@@ -335,13 +389,53 @@ export function VideoReview({ match, onBack }: VideoReviewProps) {
                 onInput={(e) => setYtUrl((e.currentTarget as HTMLInputElement).value)}
               />
               <button type="button" onClick={onLoadYouTube}>Load</button>
-              <button type="button" onClick={syncHere} disabled={!hasSource}>Sync here</button>
             </div>
-            <p className="muted">
-              {link.anchors.length} anchor(s) · {link.source_ref
-                ? (link.source_kind === YOUTUBE ? `YouTube ${link.source_ref}` : link.source_ref)
-                : "no video"}
-            </p>
+
+            {/* Sync panel -- kept next to the button so the confirmation is
+                visible on the tablet (the top banner scrolls out of view). */}
+            <div className="vr-sync">
+              <div className="vr-sync-target muted">
+                {selectedAction != null
+                  ? <>Selected: <strong>{actionLabel(selectedAction)}</strong></>
+                  : "Tap an action in the list to select it."}
+              </div>
+              <div className="button-row">
+                <button type="button" className="primary" onClick={syncHere} disabled={!canSync}>
+                  Sync here
+                </button>
+                {ytDeepLink != null ? (
+                  <a className="vr-yt-open" href={ytDeepLink} target="_blank" rel="noreferrer">
+                    Open in YouTube
+                  </a>
+                ) : null}
+              </div>
+              {link.source_kind === YOUTUBE && Boolean(link.source_ref) && !ytReady ? (
+                <p className="muted">Video loading…</p>
+              ) : null}
+            </div>
+
+            <div className="vr-anchors">
+              <div className="muted">
+                {link.anchors.length} anchor(s) · {link.source_ref
+                  ? (link.source_kind === YOUTUBE ? `YouTube ${link.source_ref}` : link.source_ref)
+                  : "no video"}
+              </div>
+              {link.anchors.length > 0 ? (
+                <ul className="vr-anchor-list">
+                  {[...link.anchors]
+                    .map((anchor, i) => ({ anchor, i }))
+                    .sort((x, y) => x.anchor.video_seconds - y.anchor.video_seconds)
+                    .map(({ anchor, i }) => (
+                      <li key={i}>
+                        <span className="muted">video {fmtTime(anchor.video_seconds)}</span>
+                        <button type="button" className="vr-anchor-del" onClick={() => removeAnchor(i)}>
+                          remove
+                        </button>
+                      </li>
+                    ))}
+                </ul>
+              ) : null}
+            </div>
           </div>
 
           {/* clip list */}
