@@ -126,10 +126,10 @@ export function VideoReview({ match, onBack }: VideoReviewProps) {
       ytHostRef.current.appendChild(host);
       ytPlayerRef.current = new YT.Player(host, {
         videoId: link.source_ref,
-        host: "https://www.youtube-nocookie.com",
-        // origin is required for the iframe API's postMessage bridge to work on
-        // a third-party host (github.io); without it seek/play/pause no-op.
-        playerVars: { controls: 1, rel: 0, modestbranding: 1, playsinline: 1, origin: window.location.origin },
+        host: "https://www.youtube.com",
+        // origin is sometimes blocked by tablet webviews, so we omit it.
+        // nocookie domain is also known to drop the onReady event in some setups.
+        playerVars: { controls: 1, rel: 0, modestbranding: 1, playsinline: 1 },
         events: { onReady: () => { if (!cancelled) setYtReady(true); } },
       });
     });
