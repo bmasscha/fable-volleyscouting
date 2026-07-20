@@ -186,6 +186,99 @@ select {
   min-width: 5.5rem;
 }
 
+.video-review-card {
+  margin-top: 4vh;
+  max-width: 1200px;
+}
+
+.video-review-body {
+  display: grid;
+  grid-template-columns: minmax(180px, 220px) 1fr minmax(220px, 320px);
+  gap: 1rem;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .video-review-body {
+    grid-template-columns: 1fr;
+  }
+}
+
+.vr-filters {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.vr-filters label,
+.vr-clips {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.vr-player {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.vr-video,
+.vr-yt,
+.vr-placeholder {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  border-radius: 12px;
+}
+
+.vr-yt iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 12px;
+}
+
+.vr-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9ab1bc;
+  text-align: center;
+  padding: 1rem;
+}
+
+.vr-source-controls input[type="text"] {
+  min-width: 8rem;
+  flex: 1 1 8rem;
+}
+
+.vr-file-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.5rem 0.8rem;
+  border-radius: 10px;
+  background: #1d3440;
+  cursor: pointer;
+}
+
+.vr-clips-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.4rem;
+}
+
+.vr-clip-row {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.6rem 0.7rem;
+  border-radius: 10px;
+  background: #10202a;
+  cursor: pointer;
+}
+
+.vr-clip-row.selected {
+  outline: 2px solid #2a6f97;
+}
+
 .scoreboard-card {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: center;

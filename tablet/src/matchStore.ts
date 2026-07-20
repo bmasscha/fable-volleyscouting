@@ -16,10 +16,16 @@ import {
   fromStoredSnapshot,
   toStoredSnapshot,
 } from "./browserStorage";
+import {
+  VideoLink,
+  video_link_from_dict,
+  video_link_to_dict,
+} from "./core/videoSync";
 
 const DB_NAME = "fable-scouter";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE = "matches";
+const VIDEO_STORE = "videoLinks";
 
 /** Lightweight listing row -- everything the Saved-matches screen needs
  * without deserializing the whole event log. Derived and denormalized at
@@ -55,6 +61,10 @@ function openDb(): Promise<IDBDatabase> {
       const db = request.result;
       if (!db.objectStoreNames.contains(STORE)) {
         db.createObjectStore(STORE, { keyPath: "id" });
+      }
+      // v2: per-match video links for the review tool (keyed by match id).
+      if (!db.objectStoreNames.contains(VIDEO_STORE)) {
+        db.createObjectStore(VIDEO_STORE, { keyPath: "id" });
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -159,4 +169,42 @@ export async function deleteMatch(id: string): Promise<void> {
   const tx = db.transaction(STORE, "readwrite");
   tx.objectStore(STORE).delete(id);
   await txDone(tx);
+}
+
+// ------------------------------------------------------------- video links
+//
+// The video-review route stores, per match, which video it is bound to and the
+// sync anchors. A YouTube source_ref (the video id) persists fully; for a local
+// file only the name is kept for display -- the file itself is re-picked each
+// session (browsers cannot silently reopen a local file), while the anchors
+// remain valid.
+
+interface VideoLinkRecord {
+  id: string;
+  link: Record<string, unknown>;
+}
+
+/** Save (upsert) the video link for a match. */
+export async function saveVideoLink(matchId: string, link: VideoLink): Promise<void> {
+  const db = await openDb();
+  const tx = db.transaction(VIDEO_STORE, "readwrite");
+  tx.objectStore(VIDEO_STORE).put({ id: matchId, link: video_link_to_dict(link) });
+  await txDone(tx);
+}
+
+/** Load the video link for a match, or null if none is stored / it is corrupt. */
+export async function getVideoLink(matchId: string): Promise<VideoLink | null> {
+  const db = await openDb();
+  const tx = db.transaction(VIDEO_STORE, "readonly");
+  const record = (await requestResult(tx.objectStore(VIDEO_STORE).get(matchId))) as
+    | VideoLinkRecord
+    | undefined;
+  if (record == null) {
+    return null;
+  }
+  try {
+    return video_link_from_dict(record.link);
+  } catch {
+    return null;
+  }
 }

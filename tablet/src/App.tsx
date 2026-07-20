@@ -44,6 +44,7 @@ import {
   listMatches,
   putMatch,
 } from "./matchStore";
+import { VideoReview } from "./VideoReview";
 import {
   MatchSetupDraft,
   MatchSetupResult,
@@ -111,7 +112,7 @@ const CONTEXT_HINTS: Record<"serve" | "reception" | "attack" | "dig", Record<Rat
   dig: { [Rating.ERROR]: "fail", [Rating.POOR]: "poor", [Rating.GOOD]: "good", [Rating.PERFECT]: "perfect" },
 };
 
-type Screen = "startup" | "setup" | "rosters" | "matches" | "match";
+type Screen = "startup" | "setup" | "rosters" | "matches" | "match" | "video";
 
 interface PlayerOption {
   id: string;
@@ -865,6 +866,7 @@ interface SavedMatchesScreenProps {
   matches: MatchMeta[];
   storageError: string | null;
   onOpen: (id: string) => void;
+  onReview: (id: string) => void;
   onExport: (id: string) => void;
   onDelete: (id: string) => void;
   onImport: (file: File) => void;
@@ -875,6 +877,7 @@ function SavedMatchesScreen({
   matches,
   storageError,
   onOpen,
+  onReview,
   onExport,
   onDelete,
   onImport,
@@ -928,6 +931,9 @@ function SavedMatchesScreen({
                 <div className="match-row-actions">
                   <button type="button" className="primary" onClick={() => onOpen(meta.id)}>
                     Open
+                  </button>
+                  <button type="button" onClick={() => onReview(meta.id)}>
+                    Video
                   </button>
                   <button type="button" onClick={() => onExport(meta.id)}>
                     Export
@@ -1484,6 +1490,7 @@ export function App() {
   const [session, setSession] = useState<MatchSnapshot | null>(null);
   const [autosave, setAutosave] = useState<MatchSnapshot | null>(null);
   const [matches, setMatches] = useState<MatchMeta[]>([]);
+  const [videoMatch, setVideoMatch] = useState<MatchSnapshot | null>(null);
   const [rosterLibrary, setRosterLibrary] = useState<Team[]>([]);
   const [screen, setScreen] = useState<Screen>("startup");
   const [libraryReturnScreen, setLibraryReturnScreen] = useState<"startup" | "setup">("startup");
@@ -2310,6 +2317,17 @@ export function App() {
     setScreen("match");
   }
 
+  async function openVideoReview(id: string): Promise<void> {
+    const snapshot = await getMatch(id);
+    if (snapshot == null) {
+      setStorageError("That match could not be opened on this device.");
+      return;
+    }
+    setVideoMatch(snapshot);
+    setStorageError(null);
+    setScreen("video");
+  }
+
   async function exportStoredMatch(id: string): Promise<void> {
     const snapshot = await getMatch(id);
     if (snapshot == null) {
@@ -2361,10 +2379,23 @@ export function App() {
         matches={matches}
         storageError={storageError}
         onOpen={(id) => void openStoredMatch(id)}
+        onReview={(id) => void openVideoReview(id)}
         onExport={(id) => void exportStoredMatch(id)}
         onDelete={(id) => void deleteStoredMatch(id)}
         onImport={(file) => void importMatchFile(file)}
         onBack={() => setScreen(session == null ? "startup" : "match")}
+      />
+    );
+  }
+
+  if (screen === "video" && videoMatch != null) {
+    return (
+      <VideoReview
+        match={videoMatch}
+        onBack={() => {
+          setVideoMatch(null);
+          setScreen("matches");
+        }}
       />
     );
   }

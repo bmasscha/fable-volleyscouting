@@ -3,8 +3,16 @@ import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, test } from "vitest";
 
 import { MatchSnapshot } from "../src/browserStorage";
-import { deleteMatch, getMatch, listMatches, putMatch } from "../src/matchStore";
+import {
+  deleteMatch,
+  getMatch,
+  getVideoLink,
+  listMatches,
+  putMatch,
+  saveVideoLink,
+} from "../src/matchStore";
 import { default_config, make_player, make_team } from "../src/core/models";
+import { FILE, YOUTUBE, video_link } from "../src/core/videoSync";
 
 function snapshot(id: string, overrides: Partial<MatchSnapshot> = {}): MatchSnapshot {
   return {
@@ -76,5 +84,29 @@ describe("match archive (IndexedDB)", () => {
     const metas = await listMatches();
     expect(metas[0]!.eventCount).toBe(0);
     expect(metas[0]!.finished).toBe(false);
+  });
+});
+
+describe("video links", () => {
+  test("get returns null when none is stored", async () => {
+    expect(await getVideoLink("nope")).toBeNull();
+  });
+
+  test("save then get round-trips a link with anchors", async () => {
+    const link = video_link(YOUTUBE, "dQw4w9WgXcQ", [
+      { event_ts: 1000, video_seconds: 12 },
+    ]);
+    await saveVideoLink("match-a", link);
+    const loaded = await getVideoLink("match-a");
+    expect(loaded?.source_kind).toBe(YOUTUBE);
+    expect(loaded?.source_ref).toBe("dQw4w9WgXcQ");
+    expect(loaded?.anchors).toEqual([{ event_ts: 1000, video_seconds: 12 }]);
+  });
+
+  test("save overwrites the link for the same match", async () => {
+    await saveVideoLink("match-b", video_link(FILE, "old.mp4"));
+    await saveVideoLink("match-b", video_link(FILE, "new.mp4"));
+    const loaded = await getVideoLink("match-b");
+    expect(loaded?.source_ref).toBe("new.mp4");
   });
 });

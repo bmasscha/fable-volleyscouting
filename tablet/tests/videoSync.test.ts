@@ -11,6 +11,7 @@ import {
   video_link,
   video_link_from_dict,
   video_link_to_dict,
+  youtube_id,
 } from "../src/core/videoSync";
 
 describe("event_to_video_time", () => {
@@ -79,6 +80,14 @@ describe("clip_window", () => {
 
 test("suggest_offset = mtime - duration", () => {
   expect(suggest_offset(5000, 600)).toBe(4400);
+});
+
+test("youtube_id from urls and bare id", () => {
+  expect(youtube_id("https://www.youtube.com/watch?v=dQw4w9WgXcQ")).toBe("dQw4w9WgXcQ");
+  expect(youtube_id("https://youtu.be/dQw4w9WgXcQ?t=42")).toBe("dQw4w9WgXcQ");
+  expect(youtube_id("dQw4w9WgXcQ")).toBe("dQw4w9WgXcQ");
+  expect(youtube_id("not a video")).toBeNull();
+  expect(youtube_id("")).toBeNull();
 });
 
 test("video_link round-trips through dict", () => {

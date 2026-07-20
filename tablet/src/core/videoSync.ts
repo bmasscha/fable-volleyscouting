@@ -114,3 +114,16 @@ export function clip_window(link: VideoLink, ts: number | null): [number, number
 export function suggest_offset(video_mtime: number, duration: number): number {
   return video_mtime - duration;
 }
+
+const YOUTUBE_ID = /(?:v=|youtu\.be\/|\/embed\/|\/shorts\/|\/live\/)([A-Za-z0-9_-]{11})/;
+
+/** Extract the 11-char video id from a YouTube URL, or accept a bare id.
+ * Returns null when nothing looks like a video id. */
+export function youtube_id(url_or_id: string): string | null {
+  const text = (url_or_id ?? "").trim();
+  if (/^[A-Za-z0-9_-]{11}$/.test(text)) {
+    return text;
+  }
+  const m = YOUTUBE_ID.exec(text);
+  return m != null ? m[1]! : null;
+}
