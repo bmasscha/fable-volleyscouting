@@ -10,6 +10,7 @@ Pure Python, no Qt. Mirrored to tablet/src/core/videoSync.ts (TRANSLATION.md).
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 # The clip pulled around each action: 2 s before -> 5 s after (7 s total). The
@@ -97,6 +98,19 @@ def clip_window(link: VideoLink, ts: float | None) -> tuple[float, float] | None
     start = max(0.0, v - link.pre_roll)
     end = max(start, v + link.post_roll)
     return (start, end)
+
+
+_YOUTUBE_ID = re.compile(r"(?:v=|youtu\.be/|/embed/|/shorts/|/live/)([A-Za-z0-9_-]{11})")
+
+
+def youtube_id(url_or_id: str) -> str | None:
+    """Extract the 11-char video id from a YouTube URL, or accept a bare id.
+    Returns None when nothing looks like a video id."""
+    text = (url_or_id or "").strip()
+    if re.fullmatch(r"[A-Za-z0-9_-]{11}", text):
+        return text
+    m = _YOUTUBE_ID.search(text)
+    return m.group(1) if m else None
 
 
 def suggest_offset(video_mtime: float, duration: float) -> float:

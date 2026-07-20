@@ -4,7 +4,7 @@ import pytest
 
 from core.video_sync import (FILE, YOUTUBE, POST_ROLL, PRE_ROLL, Anchor,
                              VideoLink, clip_window, event_to_video_time,
-                             suggest_offset)
+                             suggest_offset, youtube_id)
 
 
 def test_no_anchors_yields_no_mapping():
@@ -83,6 +83,15 @@ def test_custom_roll_values():
 def test_suggest_offset():
     # video finished (mtime) at wall-clock 5000, ran 600 s -> started at 4400
     assert suggest_offset(5000.0, 600.0) == 4400.0
+
+
+def test_youtube_id_from_urls_and_bare_id():
+    assert youtube_id("https://www.youtube.com/watch?v=dQw4w9WgXcQ") == "dQw4w9WgXcQ"
+    assert youtube_id("https://youtu.be/dQw4w9WgXcQ?t=42") == "dQw4w9WgXcQ"
+    assert youtube_id("https://www.youtube.com/embed/dQw4w9WgXcQ") == "dQw4w9WgXcQ"
+    assert youtube_id("dQw4w9WgXcQ") == "dQw4w9WgXcQ"
+    assert youtube_id("not a video") is None
+    assert youtube_id("") is None
 
 
 def test_roundtrip_to_from_dict():

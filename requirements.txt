@@ -1,2 +1,7 @@
 PyQt6>=6.11
 pytest>=8
+
+# Video review tool (video_main.py / ui/video_review.py):
+PyQt6-WebEngine>=6.11   # embedded player for YouTube (IFrame API)
+imageio-ffmpeg>=0.5     # bundled ffmpeg binary for clip export
+yt-dlp>=2025.1          # download YouTube fragments for export
