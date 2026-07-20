@@ -417,7 +417,11 @@ export function VideoReview({ match, onBack }: VideoReviewProps) {
                     type="button" 
                     className="vr-yt-login"
                     title="Log into YouTube to remove ads if you have YouTube Premium"
-                    onClick={() => window.open("https://accounts.google.com/ServiceLogin?service=youtube&continue=https://www.youtube.com", "yt_login", "width=600,height=800")}
+                    onClick={() => {
+                      if (confirm("To remove ads, you must log into YouTube. This will navigate you away from the app.\n\nAfter you successfully log in on the YouTube page, use your device's swipe-to-go-back gesture (or back button) to return to this app. The app will remember your login.\n\nProceed?")) {
+                        window.location.href = "https://accounts.google.com/ServiceLogin?service=youtube&continue=https://www.youtube.com";
+                      }
+                    }}
                   >
                     Log in (Remove Ads)
                   </button>
