@@ -412,6 +412,16 @@ export function VideoReview({ match, onBack }: VideoReviewProps) {
                     Open in YouTube
                   </a>
                 ) : null}
+                {link.source_kind === YOUTUBE && Boolean(link.source_ref) ? (
+                  <button 
+                    type="button" 
+                    className="vr-yt-login"
+                    title="Log into YouTube to remove ads if you have YouTube Premium"
+                    onClick={() => window.open("https://accounts.google.com/ServiceLogin?service=youtube&continue=https://www.youtube.com", "yt_login", "width=600,height=800")}
+                  >
+                    Log in (Remove Ads)
+                  </button>
+                ) : null}
               </div>
               {link.source_kind === YOUTUBE && Boolean(link.source_ref) && !ytReady ? (
                 <p className="muted">Video loading…</p>
