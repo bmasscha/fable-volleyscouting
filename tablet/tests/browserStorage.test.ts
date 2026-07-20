@@ -1,7 +1,53 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
-import { clearAutosave, loadAutosave, loadRosterLibrary, saveAutosave, saveRosterLibrary, AUTOSAVE_KEY, ROSTER_LIBRARY_KEY } from "../src/browserStorage";
-import { default_config, make_player, make_team } from "../src/core/models";
+import {
+  clearAutosave,
+  exportMatchJson,
+  importMatchJson,
+  loadAutosave,
+  loadRosterLibrary,
+  matchExportFilename,
+  saveAutosave,
+  saveRosterLibrary,
+  AUTOSAVE_KEY,
+  ROSTER_LIBRARY_KEY,
+  type MatchSnapshot,
+} from "../src/browserStorage";
+import {
+  HOME,
+  AWAY,
+  Rating,
+  config_to_dict,
+  default_config,
+  make_player,
+  make_team,
+  team_to_dict,
+} from "../src/core/models";
+import { ServeEvent } from "../src/core/events";
+
+function sampleSnapshot(overrides: Partial<MatchSnapshot> = {}): MatchSnapshot {
+  const serve: ServeEvent = {
+    type: "serve",
+    ts: 12.5,
+    team: HOME,
+    player_id: "h1",
+    rating: Rating.PERFECT,
+  };
+  return {
+    id: "sample",
+    createdAt: 1000,
+    config: default_config(),
+    teams: {
+      home: make_team("Home", [make_player(1, "A", undefined, "h1")]),
+      away: make_team("Away", [make_player(2, "B", undefined, "a1")]),
+    },
+    events: [serve],
+    lastWarnings: [],
+    switchSides: true,
+    savedAt: 2000,
+    ...overrides,
+  };
+}
 
 class FakeStorage implements Storage {
   private readonly values = new Map<string, string>();
@@ -94,6 +140,8 @@ describe("browser roster library storage", () => {
       },
       events: [],
       lastWarnings: [],
+      id: "m1",
+      createdAt: 0,
       switchSides: true,
       savedAt: null,
     });
@@ -111,6 +159,8 @@ describe("browser roster library storage", () => {
       },
       events: [],
       lastWarnings: [],
+      id: "m2",
+      createdAt: 0,
       switchSides: false,
       savedAt: 123,
     });
@@ -127,6 +177,8 @@ describe("browser roster library storage", () => {
       },
       events: [],
       lastWarnings: [],
+      id: "m3",
+      createdAt: 0,
       switchSides: false,
       savedAt: null,
     });
@@ -135,5 +187,70 @@ describe("browser roster library storage", () => {
     localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(stored));
 
     expect(loadAutosave()?.switchSides).toBe(true);
+  });
+
+  test("autosave from before ids gains a durable id on load", () => {
+    saveAutosave(sampleSnapshot());
+    const stored = JSON.parse(localStorage.getItem(AUTOSAVE_KEY)!);
+    delete stored.id;
+    delete stored.createdAt;
+    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(stored));
+
+    const loaded = loadAutosave();
+    expect(typeof loaded?.id).toBe("string");
+    expect(loaded!.id.length).toBeGreaterThan(0);
+    // createdAt backfills from savedAt when absent
+    expect(loaded?.createdAt).toBe(2000);
+  });
+});
+
+describe("match export / import", () => {
+  test("export produces a desktop-compatible payload that preserves ts", () => {
+    const json = exportMatchJson(sampleSnapshot());
+    const data = JSON.parse(json);
+
+    expect(data.version).toBe(1);
+    expect(data.config).toBeTypeOf("object");
+    expect(Object.keys(data.teams)).toEqual([HOME, AWAY]);
+    expect(data.events).toHaveLength(1);
+    expect(data.events[0].ts).toBe(12.5);
+    expect(data.app).toBe("fable-scouter-tablet");
+  });
+
+  test("import round-trips a match and assigns a fresh id", () => {
+    const original = sampleSnapshot({ id: "original" });
+    const imported = importMatchJson(exportMatchJson(original));
+
+    expect(imported.id).not.toBe("original");
+    expect(imported.id.length).toBeGreaterThan(0);
+    expect(imported.teams[HOME].name).toBe("Home");
+    expect(imported.events).toHaveLength(1);
+    expect(imported.events[0]!.ts).toBe(12.5);
+    expect(imported.switchSides).toBe(true);
+  });
+
+  test("import accepts a bare desktop file (no tablet extras)", () => {
+    const desktopFile = JSON.stringify({
+      version: 1,
+      config: config_to_dict(default_config()),
+      teams: {
+        home: team_to_dict(make_team("H", [make_player(1, "A", undefined, "h1")])),
+        away: team_to_dict(make_team("W", [make_player(2, "B", undefined, "a1")])),
+      },
+      events: [],
+    });
+    const imported = importMatchJson(desktopFile);
+    expect(imported.switchSides).toBe(true);
+    expect(imported.teams[AWAY].name).toBe("W");
+  });
+
+  test("import rejects malformed files", () => {
+    expect(() => importMatchJson("{not json")).toThrow();
+    expect(() => importMatchJson(JSON.stringify({ version: 1 }))).toThrow();
+  });
+
+  test("export filename combines team names and date", () => {
+    const name = matchExportFilename(sampleSnapshot({ savedAt: Date.UTC(2026, 6, 20) }));
+    expect(name).toMatch(/^Home-vs-Away-2026-07-\d\d\.fable\.json$/);
   });
 });

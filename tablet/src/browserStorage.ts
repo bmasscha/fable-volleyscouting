@@ -15,6 +15,11 @@ import { deserialize_system, serialize_system } from "./core/user_systems";
 import { createSeedRosterLibrary, sortTeams } from "./setup";
 
 export interface MatchSnapshot {
+  // Durable identity of this match in the IndexedDB archive (see matchStore.ts).
+  // Legacy autosaves without one are given a fresh id on load.
+  id: string;
+  // Wall-clock time the match was first saved (defaults from savedAt when absent).
+  createdAt: number;
   config: MatchConfig;
   teams: Record<TeamKey, Team>;
   events: MatchEvent[];
@@ -27,6 +32,8 @@ export interface MatchSnapshot {
 
 interface StoredSnapshot {
   version: 1;
+  id?: string;
+  createdAt?: number;
   config: Record<string, unknown>;
   teams: Record<string, Record<string, unknown>>;
   events: Record<string, unknown>[];
@@ -78,9 +85,24 @@ function removeStorageItem(key: string): boolean {
   }
 }
 
-export function saveAutosave(snapshot: MatchSnapshot): boolean {
-  const stored: StoredSnapshot = {
+/** Generate a stable match id. crypto.randomUUID exists in every target
+ * browser and in Node's test runner; the fallback keeps unit tests running
+ * on the off chance it is absent. */
+export function newMatchId(): string {
+  const c = (globalThis as { crypto?: Crypto }).crypto;
+  if (c?.randomUUID) {
+    return c.randomUUID();
+  }
+  return `m-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** Serialize a snapshot to its stored dict shape (the same one the autosave
+ * blob and each IndexedDB record use). */
+export function toStoredSnapshot(snapshot: MatchSnapshot): StoredSnapshot {
+  return {
     version: 1,
+    id: snapshot.id,
+    createdAt: snapshot.createdAt,
     config: config_to_dict(snapshot.config),
     teams: {
       [HOME]: team_to_dict(snapshot.teams[HOME]),
@@ -91,7 +113,35 @@ export function saveAutosave(snapshot: MatchSnapshot): boolean {
     switchSides: snapshot.switchSides,
     savedAt: snapshot.savedAt,
   };
-  return writeStorageItem(AUTOSAVE_KEY, JSON.stringify(stored));
+}
+
+/** Rebuild a snapshot from a stored dict. Missing id/createdAt are backfilled
+ * (legacy autosaves predate them), so an old blob loads cleanly and gains a
+ * durable identity. Throws when the teams are missing. */
+export function fromStoredSnapshot(stored: Partial<StoredSnapshot>): MatchSnapshot {
+  if (stored.teams?.[HOME] == null || stored.teams?.[AWAY] == null) {
+    throw new Error("missing teams");
+  }
+  const savedAt = typeof stored.savedAt === "number" ? stored.savedAt : null;
+  return {
+    id: typeof stored.id === "string" && stored.id.length > 0 ? stored.id : newMatchId(),
+    createdAt: typeof stored.createdAt === "number" ? stored.createdAt : (savedAt ?? Date.now()),
+    config: config_from_dict(stored.config ?? {}),
+    teams: {
+      [HOME]: team_from_dict(stored.teams[HOME]),
+      [AWAY]: team_from_dict(stored.teams[AWAY]),
+    },
+    events: (stored.events ?? []).map((event) => event_from_dict(event)),
+    lastWarnings: Array.isArray(stored.lastWarnings)
+      ? stored.lastWarnings.filter((warning): warning is string => typeof warning === "string")
+      : [],
+    switchSides: typeof stored.switchSides === "boolean" ? stored.switchSides : true,
+    savedAt,
+  };
+}
+
+export function saveAutosave(snapshot: MatchSnapshot): boolean {
+  return writeStorageItem(AUTOSAVE_KEY, JSON.stringify(toStoredSnapshot(snapshot)));
 }
 
 export function loadAutosave(): MatchSnapshot | null {
@@ -100,27 +150,91 @@ export function loadAutosave(): MatchSnapshot | null {
     return null;
   }
   try {
-    const stored = JSON.parse(raw) as Partial<StoredSnapshot>;
-    if (stored.teams?.[HOME] == null || stored.teams?.[AWAY] == null) {
-      throw new Error("missing teams");
-    }
-    return {
-      config: config_from_dict(stored.config ?? {}),
-      teams: {
-        [HOME]: team_from_dict(stored.teams[HOME]),
-        [AWAY]: team_from_dict(stored.teams[AWAY]),
-      },
-      events: (stored.events ?? []).map((event) => event_from_dict(event)),
-      lastWarnings: Array.isArray(stored.lastWarnings)
-        ? stored.lastWarnings.filter((warning): warning is string => typeof warning === "string")
-        : [],
-      switchSides: typeof stored.switchSides === "boolean" ? stored.switchSides : true,
-      savedAt: typeof stored.savedAt === "number" ? stored.savedAt : null,
-    };
+    return fromStoredSnapshot(JSON.parse(raw) as Partial<StoredSnapshot>);
   } catch {
     clearAutosave();
     return null;
   }
+}
+
+// ------------------------------------------------------ export / import files
+//
+// Export produces a file that the desktop app's core/persistence.load_match can
+// read directly: it reads only {version, config, teams, events} and ignores the
+// tablet-only extras. Every event keeps its wall-clock `ts`, so the file doubles
+// as the dataset for later video-timestamp linking.
+
+/** Build the portable JSON text for a match (desktop-compatible). */
+export function exportMatchJson(snapshot: MatchSnapshot): string {
+  const payload = {
+    version: 1,
+    config: config_to_dict(snapshot.config),
+    teams: {
+      [HOME]: team_to_dict(snapshot.teams[HOME]),
+      [AWAY]: team_to_dict(snapshot.teams[AWAY]),
+    },
+    events: snapshot.events.map((event) => event_to_dict(event)),
+    // Tablet extras; the desktop loader ignores unknown keys.
+    switchSides: snapshot.switchSides,
+    createdAt: snapshot.createdAt,
+    savedAt: snapshot.savedAt,
+    app: "fable-scouter-tablet",
+  };
+  return JSON.stringify(payload, null, 1);
+}
+
+/** Parse an exported match file (desktop or tablet origin) into a snapshot with
+ * a fresh id -- importing never collides with or overwrites an existing match.
+ * Throws on malformed input so the caller can show a banner. */
+export function importMatchJson(text: string): MatchSnapshot {
+  const data = JSON.parse(text) as Record<string, unknown>;
+  if (data == null || typeof data !== "object") {
+    throw new Error("not a match file");
+  }
+  const teams = data.teams as Record<string, Record<string, unknown>> | undefined;
+  if (teams?.[HOME] == null || teams?.[AWAY] == null) {
+    throw new Error("match file is missing teams");
+  }
+  if (!Array.isArray(data.events)) {
+    throw new Error("match file is missing events");
+  }
+  return {
+    id: newMatchId(),
+    createdAt: typeof data.createdAt === "number" ? data.createdAt : Date.now(),
+    config: config_from_dict((data.config as Record<string, unknown>) ?? {}),
+    teams: {
+      [HOME]: team_from_dict(teams[HOME]),
+      [AWAY]: team_from_dict(teams[AWAY]),
+    },
+    events: (data.events as Record<string, unknown>[]).map((event) => event_from_dict(event)),
+    lastWarnings: [],
+    switchSides: typeof data.switchSides === "boolean" ? data.switchSides : true,
+    savedAt: Date.now(),
+  };
+}
+
+/** File name for an exported match: "Home-vs-Away-YYYY-MM-DD.fable.json". */
+export function matchExportFilename(snapshot: MatchSnapshot): string {
+  const safe = (name: string) =>
+    name.replace(/[^A-Za-z0-9 _-]/g, "_").trim().replace(/\s+/g, " ") || "team";
+  const d = new Date(snapshot.savedAt ?? snapshot.createdAt ?? Date.now());
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const date = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return `${safe(snapshot.teams[HOME].name)}-vs-${safe(snapshot.teams[AWAY].name)}-${date}.fable.json`;
+}
+
+/** Trigger a browser download of text as a file. Thin DOM glue; the payload is
+ * built by exportMatchJson (which is what the unit tests exercise). */
+export function downloadTextFile(filename: string, text: string): void {
+  const blob = new Blob([text], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
 }
 
 export function clearAutosave(): boolean {

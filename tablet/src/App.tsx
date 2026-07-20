@@ -25,13 +25,25 @@ import {
 import {
   MatchSnapshot,
   clearAutosave,
+  downloadTextFile,
+  exportMatchJson,
+  importMatchJson,
   loadAutosave,
   loadRosterLibrary,
   loadUserSystems,
+  matchExportFilename,
+  newMatchId,
   saveAutosave,
   saveRosterLibrary,
   saveUserSystems,
 } from "./browserStorage";
+import {
+  MatchMeta,
+  deleteMatch,
+  getMatch,
+  listMatches,
+  putMatch,
+} from "./matchStore";
 import {
   MatchSetupDraft,
   MatchSetupResult,
@@ -99,7 +111,7 @@ const CONTEXT_HINTS: Record<"serve" | "reception" | "attack" | "dig", Record<Rat
   dig: { [Rating.ERROR]: "fail", [Rating.POOR]: "poor", [Rating.GOOD]: "good", [Rating.PERFECT]: "perfect" },
 };
 
-type Screen = "startup" | "setup" | "rosters" | "match";
+type Screen = "startup" | "setup" | "rosters" | "matches" | "match";
 
 interface PlayerOption {
   id: string;
@@ -437,9 +449,11 @@ function RatingRow({ onPick }: RatingRowProps) {
 interface StartupScreenProps {
   autosave: MatchSnapshot | null;
   rosterCount: number;
+  matchCount: number;
   storageError: string | null;
   onResume: () => void;
   onNewMatch: () => void;
+  onSavedMatches: () => void;
   onManageTeams: () => void;
   onClearAutosave: () => void;
 }
@@ -447,9 +461,11 @@ interface StartupScreenProps {
 function StartupScreen({
   autosave,
   rosterCount,
+  matchCount,
   storageError,
   onResume,
   onNewMatch,
+  onSavedMatches,
   onManageTeams,
   onClearAutosave,
 }: StartupScreenProps) {
@@ -458,7 +474,9 @@ function StartupScreen({
       <section className="startup-card">
         <h1>Fable Scouter Tablet</h1>
         <p>Match setup now starts from a browser-side team library.</p>
-        <p className="muted">{rosterCount} saved team(s) on this device.</p>
+        <p className="muted">
+          {rosterCount} saved team(s) · {matchCount} saved match(es) on this device.
+        </p>
         {storageError != null ? <div className="message-banner error">{storageError}</div> : null}
         {autosave != null ? (
           <>
@@ -472,10 +490,13 @@ function StartupScreen({
             </div>
             <div className="button-row">
               <button type="button" className="primary" onClick={onResume}>
-                Resume
+                Resume last
               </button>
               <button type="button" onClick={onNewMatch}>
                 New match
+              </button>
+              <button type="button" onClick={onSavedMatches}>
+                Saved matches
               </button>
               <button type="button" onClick={onManageTeams}>
                 Manage teams
@@ -489,6 +510,9 @@ function StartupScreen({
           <div className="button-row">
             <button type="button" className="primary" onClick={onNewMatch}>
               New match
+            </button>
+            <button type="button" onClick={onSavedMatches}>
+              Saved matches
             </button>
             <button type="button" onClick={onManageTeams}>
               Manage teams
@@ -826,6 +850,96 @@ function RosterLibraryScreen({ library, onSaveLibrary, onBack }: RosterLibrarySc
             )}
           </section>
         </div>
+      </section>
+    </main>
+  );
+}
+
+function matchMetaSubtitle(meta: MatchMeta): string {
+  const sets = `sets ${meta.homeSets}-${meta.awaySets}`;
+  const status = meta.finished ? "finished" : `set ${Math.max(meta.setNumber, 1)}`;
+  return `${meta.eventCount} event(s) · ${sets} · ${status} · ${formatSavedAt(meta.updatedAt)}`;
+}
+
+interface SavedMatchesScreenProps {
+  matches: MatchMeta[];
+  storageError: string | null;
+  onOpen: (id: string) => void;
+  onExport: (id: string) => void;
+  onDelete: (id: string) => void;
+  onImport: (file: File) => void;
+  onBack: () => void;
+}
+
+function SavedMatchesScreen({
+  matches,
+  storageError,
+  onOpen,
+  onExport,
+  onDelete,
+  onImport,
+  onBack,
+}: SavedMatchesScreenProps) {
+  const importInput = useRef<HTMLInputElement>(null);
+  return (
+    <main className="shell">
+      <section className="startup-card">
+        <div className="library-header">
+          <h1>Saved matches</h1>
+          <div className="button-row">
+            <button type="button" onClick={() => importInput.current?.click()}>
+              Import match…
+            </button>
+            <button type="button" onClick={onBack}>
+              Back
+            </button>
+          </div>
+        </div>
+        <input
+          ref={importInput}
+          type="file"
+          accept=".json,application/json"
+          style={{ display: "none" }}
+          onChange={(event) => {
+            const input = event.currentTarget as HTMLInputElement;
+            const file = input.files?.[0];
+            if (file != null) {
+              onImport(file);
+            }
+            input.value = "";
+          }}
+        />
+        {storageError != null ? <div className="message-banner error">{storageError}</div> : null}
+        {matches.length === 0 ? (
+          <p className="muted">
+            No saved matches yet. Start a new match, or import a match file exported from this
+            or the desktop app.
+          </p>
+        ) : (
+          <ul className="match-list">
+            {matches.map((meta) => (
+              <li key={meta.id} className="match-row">
+                <div className="match-row-info">
+                  <strong>
+                    {meta.homeName} vs {meta.awayName}
+                  </strong>
+                  <span className="muted">{matchMetaSubtitle(meta)}</span>
+                </div>
+                <div className="match-row-actions">
+                  <button type="button" className="primary" onClick={() => onOpen(meta.id)}>
+                    Open
+                  </button>
+                  <button type="button" onClick={() => onExport(meta.id)}>
+                    Export
+                  </button>
+                  <button type="button" className="ghost" onClick={() => onDelete(meta.id)}>
+                    Delete
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </main>
   );
@@ -1369,6 +1483,7 @@ function MatchSetupScreen({
 export function App() {
   const [session, setSession] = useState<MatchSnapshot | null>(null);
   const [autosave, setAutosave] = useState<MatchSnapshot | null>(null);
+  const [matches, setMatches] = useState<MatchMeta[]>([]);
   const [rosterLibrary, setRosterLibrary] = useState<Team[]>([]);
   const [screen, setScreen] = useState<Screen>("startup");
   const [libraryReturnScreen, setLibraryReturnScreen] = useState<"startup" | "setup">("startup");
@@ -1399,7 +1514,31 @@ export function App() {
     setAutosave(savedAutosave);
     setRosterLibrary(savedLibrary);
     setSetupDraft(makeMatchSetupDraft(savedLibrary));
+
+    // Load the durable archive and, on first launch after this feature ships,
+    // adopt any legacy live autosave so an in-progress match is not lost.
+    (async () => {
+      try {
+        let saved = await listMatches();
+        if (saved.length === 0 && savedAutosave != null) {
+          await putMatch(savedAutosave);
+          saved = await listMatches();
+        }
+        setMatches(saved);
+      } catch (error) {
+        console.warn("Match archive is unavailable.", error);
+        setStorageError("Saved matches could not be loaded on this device.");
+      }
+    })();
   }, []);
+
+  async function refreshMatches(): Promise<void> {
+    try {
+      setMatches(await listMatches());
+    } catch (error) {
+      console.warn("Match archive is unavailable.", error);
+    }
+  }
 
   useEffect(() => {
     setSetupDraft((current) => makeMatchSetupDraft(rosterLibrary, current));
@@ -1518,6 +1657,13 @@ export function App() {
     } else {
       setStorageError(null);
     }
+    // Mirror into the durable archive so every match survives starting the
+    // next one. Fire-and-forget: the localStorage autosave above is the
+    // instant crash buffer; an archive write failure only surfaces a banner.
+    void putMatch(nextSession).catch((error) => {
+      console.warn("Match archive write failed.", error);
+      setStorageError("This match could not be saved to the archive on this device.");
+    });
   }
 
   function persistRosterLibrary(nextLibrary: Team[]): boolean {
@@ -1559,13 +1705,16 @@ export function App() {
   }
 
   function startConfiguredMatch(result: MatchSetupResult): void {
+    const now = Date.now();
     commit({
+      id: newMatchId(),
+      createdAt: now,
       config: result.config,
       teams: result.teams,
       events: [stampEvent(result.setStartEvent)],
       lastWarnings: [],
       switchSides: result.switchSides,
-      savedAt: Date.now(),
+      savedAt: now,
     });
     resetTransientInputs();
     setScreen("match");
@@ -2142,6 +2291,84 @@ export function App() {
     setAutosave(null);
   }
 
+  function openSavedMatches(): void {
+    void refreshMatches();
+    setScreen("matches");
+  }
+
+  async function openStoredMatch(id: string): Promise<void> {
+    const snapshot = await getMatch(id);
+    if (snapshot == null) {
+      setStorageError("That match could not be opened on this device.");
+      return;
+    }
+    resetTransientInputs();
+    setSession(snapshot);
+    setAutosave(snapshot);
+    saveAutosave(snapshot); // make the opened match the resume-last target
+    setStorageError(null);
+    setScreen("match");
+  }
+
+  async function exportStoredMatch(id: string): Promise<void> {
+    const snapshot = await getMatch(id);
+    if (snapshot == null) {
+      setStorageError("That match could not be exported on this device.");
+      return;
+    }
+    downloadTextFile(matchExportFilename(snapshot), exportMatchJson(snapshot));
+  }
+
+  async function deleteStoredMatch(id: string): Promise<void> {
+    const meta = matches.find((entry) => entry.id === id);
+    const label = meta != null ? `${meta.homeName} vs ${meta.awayName}` : "this match";
+    if (!confirm(`Delete ${label}? This cannot be undone.`)) {
+      return;
+    }
+    try {
+      await deleteMatch(id);
+    } catch (error) {
+      console.warn("Match delete failed.", error);
+      setStorageError("That match could not be deleted on this device.");
+      return;
+    }
+    // Deleting the match behind the resume shortcut / active session drops it too.
+    if (autosave?.id === id) {
+      clearAutosave();
+      setAutosave(null);
+    }
+    if (session?.id === id) {
+      setSession(null);
+    }
+    await refreshMatches();
+  }
+
+  async function importMatchFile(file: File): Promise<void> {
+    try {
+      const snapshot = importMatchJson(await file.text());
+      await putMatch(snapshot);
+      setStorageError(null);
+      await refreshMatches();
+    } catch (error) {
+      console.warn("Match import failed.", error);
+      setStorageError("That file could not be imported as a match.");
+    }
+  }
+
+  if (screen === "matches") {
+    return (
+      <SavedMatchesScreen
+        matches={matches}
+        storageError={storageError}
+        onOpen={(id) => void openStoredMatch(id)}
+        onExport={(id) => void exportStoredMatch(id)}
+        onDelete={(id) => void deleteStoredMatch(id)}
+        onImport={(file) => void importMatchFile(file)}
+        onBack={() => setScreen(session == null ? "startup" : "match")}
+      />
+    );
+  }
+
   if (screen === "rosters") {
     return (
       <RosterLibraryScreen
@@ -2170,6 +2397,7 @@ export function App() {
       <StartupScreen
         autosave={autosave}
         rosterCount={rosterLibrary.length}
+        matchCount={matches.length}
         storageError={storageError}
         onResume={() => {
           if (autosave != null) {
@@ -2179,6 +2407,7 @@ export function App() {
           }
         }}
         onNewMatch={openSetup}
+        onSavedMatches={openSavedMatches}
         onManageTeams={openRosterLibrary}
         onClearAutosave={discardAutosave}
       />
@@ -2289,7 +2518,7 @@ export function App() {
             type="button"
             className="ghost"
             onClick={() => {
-              if (window.confirm("Open match setup? Starting it will replace the current autosave.")) {
+              if (window.confirm("Start a new match? This match stays saved under Saved matches.")) {
                 openSetup();
               }
             }}
