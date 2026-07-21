@@ -1,16 +1,20 @@
 import { MatchEngine } from "./core/engine";
 import { LiberoSwapEvent, SetStartEvent, SubstitutionEvent } from "./core/events";
 import { Player, Role, TEAM_KEYS, Team, TeamKey, team_player } from "./core/models";
-import { LIBERO_TOKEN_COLOR, SETTER_TOKEN_COLOR } from "./courtState";
+import { inkFor, liberoColorFor } from "./tokenColors";
 
 export interface BenchEntry {
   playerId: string;
   number: number;
   name: string;
   color: string;
+  ink: string;
   badge: string;
 }
 
+// Bench appearance mirrors the on-court tokens: a setter wears the team colour
+// with the "S" badge (no special fill -- the bench has no acting-setter cue),
+// and the libero wears the derived, maximally distinct colour.
 function playerAccent(
   team: Team,
   teamKey: TeamKey,
@@ -22,10 +26,10 @@ function playerAccent(
     return { color: team.color, badge: "" };
   }
   if (engine.state.team[teamKey].liberos.includes(playerId) || player.role === Role.LIBERO) {
-    return { color: LIBERO_TOKEN_COLOR, badge: "L" };
+    return { color: liberoColorFor(team.color), badge: "L" };
   }
   if (player.role === Role.SETTER) {
-    return { color: SETTER_TOKEN_COLOR, badge: "S" };
+    return { color: team.color, badge: "S" };
   }
   return { color: team.color, badge: "" };
 }
@@ -36,12 +40,17 @@ export function benchEntries(engine: MatchEngine, teamKey: TeamKey): BenchEntry[
   return [...team.players]
     .filter((player) => !teamState.lineup.includes(player.id))
     .sort((left, right) => left.number - right.number)
-    .map((player) => ({
-      playerId: player.id,
-      number: player.number,
-      name: player.name,
-      ...playerAccent(team, teamKey, player.id, engine),
-    }));
+    .map((player) => {
+      const accent = playerAccent(team, teamKey, player.id, engine);
+      return {
+        playerId: player.id,
+        number: player.number,
+        name: player.name,
+        color: accent.color,
+        ink: inkFor(accent.color),
+        badge: accent.badge,
+      };
+    });
 }
 
 export function benchSummary(engine: MatchEngine, teamKey: TeamKey): string {

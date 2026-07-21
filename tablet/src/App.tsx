@@ -274,10 +274,10 @@ function BenchPanel({ engine, teamKey, armedBench, onArm }: BenchPanelProps) {
               key={`${teamKey}-${entry.playerId}`}
               type="button"
               className={`bench-player-button ${armedPlayerId === entry.playerId ? "active" : ""}`}
-              style={{ background: entry.color }}
+              style={{ background: entry.color, color: entry.ink }}
               onClick={() => onArm(teamKey, entry.playerId)}
             >
-              <span className="bench-player-number">
+              <span className="bench-player-number" style={{ color: entry.ink }}>
                 #{entry.number}
                 {entry.badge !== "" ? ` · ${entry.badge}` : ""}
               </span>

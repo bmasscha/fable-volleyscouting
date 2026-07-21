@@ -41,8 +41,6 @@ export interface CourtTrajectorySpec {
   opacity: number;
 }
 
-export const SETTER_TOKEN_COLOR = "#1565c0";
-export const LIBERO_TOKEN_COLOR = "#c62828";
 export const OUT_TOLERANCE = 0.4;
 
 /** Which team occupies the court half a given x-coordinate falls in. Net is

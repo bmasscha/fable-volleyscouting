@@ -427,18 +427,17 @@ select {
 }
 
 /* token text mirrors ui/player_token.py: bold number (15pt on the desktop
-   -> 0.5 m), small badge above, dark name below the disc. NOTE: the number
-   and badge fills below are a fallback only -- CourtSurface sets an inline
-   auto-contrast `fill` (token.ink) per token, which wins over these rules. */
+   -> 0.5 m), small badge above, dark name below the disc. The number and badge
+   fill is set per token via an inline `style` (token.ink) in CourtSurface --
+   an inline style beats these class rules, an SVG `fill` attribute would not,
+   so we deliberately do NOT set fill here (it would win and force white). */
 .court-token-number {
-  fill: #ffffff;
   font-size: 0.5px;
   font-weight: 700;
   letter-spacing: 0.01em;
 }
 
 .court-token-badge {
-  fill: rgba(255, 255, 255, 0.94);
   font-size: 0.26px;
   font-weight: 700;
   letter-spacing: 0.04em;

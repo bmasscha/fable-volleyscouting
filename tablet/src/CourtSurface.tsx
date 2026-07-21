@@ -454,7 +454,7 @@ export function CourtSurface({
               />
             ) : null}
             {token.badge !== "" ? (
-              <text x={0} y={-0.38} className="court-token-badge" text-anchor="middle" fill={token.ink}>
+              <text x={0} y={-0.38} className="court-token-badge" text-anchor="middle" style={{ fill: token.ink }}>
                 {token.badge}
               </text>
             ) : null}
@@ -463,7 +463,7 @@ export function CourtSurface({
               y={0.18}
               className="court-token-number"
               text-anchor="middle"
-              fill={token.ink}
+              style={{ fill: token.ink }}
               stroke={outlineFor(token.ink)}
               stroke-width={0.03}
               paint-order="stroke"
