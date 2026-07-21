@@ -269,6 +269,40 @@ export function loadRosterLibrary(): Team[] {
   }
 }
 
+/** Build the portable JSON text for a roster library. */
+export function exportRosterLibraryJson(teams: Team[]): string {
+  const payload = {
+    version: 1,
+    teams: sortTeams(teams).map((team) => team_to_dict(team)),
+    app: "fable-scouter-tablet",
+    type: "roster-library",
+  };
+  return JSON.stringify(payload, null, 1);
+}
+
+/** Parse an exported roster library file into a list of Teams. */
+export function importRosterLibraryJson(text: string): Team[] {
+  const data = JSON.parse(text) as Record<string, unknown>;
+  if (data == null || typeof data !== "object") {
+    throw new Error("not a valid roster library file");
+  }
+  const teamsData = data.teams as Record<string, unknown>[];
+  if (!Array.isArray(teamsData)) {
+    throw new Error("roster file is missing teams array");
+  }
+  const teams = teamsData.map((team) => team_from_dict(team));
+  return sortTeams(teams);
+}
+
+/** File name for an exported roster library. */
+export function rosterExportFilename(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const date = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return `fable-roster-${date}.json`;
+}
+
+
 /** Persist the imported custom systems as their serialized (validated)
  * dicts, so storage is checked on the way out too. Returns whether the
  * write succeeded. */

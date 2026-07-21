@@ -35,6 +35,9 @@ import {
   newMatchId,
   saveAutosave,
   saveRosterLibrary,
+  exportRosterLibraryJson,
+  importRosterLibraryJson,
+  rosterExportFilename,
   saveUserSystems,
 } from "./browserStorage";
 import {
@@ -672,6 +675,49 @@ function RosterLibraryScreen({ library, onSaveLibrary, onBack }: RosterLibrarySc
     saveDraft(draftTeam, selectedTeam?.name ?? null);
   }
 
+  function exportLibrary(): void {
+    const json = exportRosterLibraryJson(library);
+    downloadTextFile(rosterExportFilename(), json);
+  }
+
+  function importLibrary(event: Event): void {
+    const file = (event.target as HTMLInputElement).files?.[0];
+    if (file == null) {
+      return;
+    }
+    file
+      .text()
+      .then((text) => {
+        try {
+          const importedTeams = importRosterLibraryJson(text);
+          // Merge imported teams by replacing existing ones with same name
+          const merged = [...library];
+          for (const imported of importedTeams) {
+            const existingIndex = merged.findIndex((t) => t.name === imported.name);
+            if (existingIndex >= 0) {
+              merged[existingIndex] = imported;
+            } else {
+              merged.push(imported);
+            }
+          }
+          if (persist(merged)) {
+            setMessage(`Imported ${importedTeams.length} team(s).`);
+            setError(null);
+          }
+        } catch (e) {
+          setError(`Import failed: ${e instanceof Error ? e.message : String(e)}`);
+          setMessage(null);
+        }
+      })
+      .catch((e) => {
+        setError(`Failed to read file: ${e instanceof Error ? e.message : String(e)}`);
+        setMessage(null);
+      })
+      .finally(() => {
+        (event.target as HTMLInputElement).value = "";
+      });
+  }
+
   return (
     <main className="shell">
       <section className="editor-shell">
@@ -681,6 +727,13 @@ function RosterLibraryScreen({ library, onSaveLibrary, onBack }: RosterLibrarySc
             <p className="muted">Saved only in this browser. Manage rosters before starting a match.</p>
           </div>
           <div className="button-row compact">
+            <button type="button" onClick={exportLibrary}>
+              Export
+            </button>
+            <label className="button">
+              Import
+              <input type="file" accept=".json" style={{ display: "none" }} onChange={importLibrary} />
+            </label>
             <button type="button" onClick={createTeam}>
               New team
             </button>
