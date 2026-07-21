@@ -302,6 +302,51 @@ export function rosterExportFilename(): string {
   return `fable-roster-${date}.json`;
 }
 
+// ----------------------------------------------- single-team (desktop) files
+//
+// The desktop app stores ONE file per team in its rosters/ folder:
+// core/persistence.save_team writes Team.to_dict() with indent=1 and names the
+// file after the team. team_to_dict here produces the identical dict (the
+// conformance contract), so these files are drop-in interchangeable both ways.
+
+/** Portable JSON text for a single team, byte-compatible with a desktop
+ * rosters/*.json file (Team.to_dict(), indent=1). */
+export function exportTeamJson(team: Team): string {
+  return JSON.stringify(team_to_dict(team), null, 1);
+}
+
+/** File name for a single-team file, mirroring desktop _team_filename: keep
+ * alphanumerics, space, hyphen and underscore; other chars become "_"; trim;
+ * fall back to "team". The Unicode \p{L}\p{N} classes match Python's
+ * Unicode-aware str.isalnum(), so accented names keep the same filename on both
+ * apps (and land on the same file in a shared folder). */
+export function teamExportFilename(team: Team): string {
+  const safe = Array.from(team.name)
+    .map((c) => (/[\p{L}\p{N} _-]/u.test(c) ? c : "_"))
+    .join("")
+    .trim();
+  return `${safe || "team"}.json`;
+}
+
+/** Parse one imported file into a list of Teams, accepting either shape:
+ *   - a roster bundle  { teams: [...] }              (tablet export)
+ *   - a single team    { name, players: [...] }      (desktop rosters/*.json)
+ * The result is NOT sorted -- callers merge across possibly several files
+ * first, then sort. Throws on anything unrecognizable so the UI can report it. */
+export function importTeamsFromJson(text: string): Team[] {
+  const data = JSON.parse(text) as Record<string, unknown>;
+  if (data == null || typeof data !== "object") {
+    throw new Error("not a valid team file");
+  }
+  if (Array.isArray(data.teams)) {
+    return (data.teams as Record<string, unknown>[]).map((team) => team_from_dict(team));
+  }
+  if (typeof data.name === "string" && Array.isArray(data.players)) {
+    return [team_from_dict(data)];
+  }
+  throw new Error("file is neither a roster library nor a single team");
+}
+
 
 /** Persist the imported custom systems as their serialized (validated)
  * dicts, so storage is checked on the way out too. Returns whether the

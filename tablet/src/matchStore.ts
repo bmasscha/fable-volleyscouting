@@ -23,9 +23,12 @@ import {
 } from "./core/videoSync";
 
 const DB_NAME = "fable-scouter";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE = "matches";
 const VIDEO_STORE = "videoLinks";
+/** Roster library + linked-folder handle. Shared with rosterStore.ts /
+ * rosterFileSync.ts, which open the same DB via the exported openDb(). */
+export const ROSTER_STORE = "rosters";
 
 /** Lightweight listing row -- everything the Saved-matches screen needs
  * without deserializing the whole event log. Derived and denormalized at
@@ -51,7 +54,7 @@ interface MatchRecord {
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
-function openDb(): Promise<IDBDatabase> {
+export function openDb(): Promise<IDBDatabase> {
   if (dbPromise != null) {
     return dbPromise;
   }
@@ -66,6 +69,10 @@ function openDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(VIDEO_STORE)) {
         db.createObjectStore(VIDEO_STORE, { keyPath: "id" });
       }
+      // v3: durable team library + the linked roster-folder handle.
+      if (!db.objectStoreNames.contains(ROSTER_STORE)) {
+        db.createObjectStore(ROSTER_STORE, { keyPath: "id" });
+      }
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
@@ -77,14 +84,14 @@ function openDb(): Promise<IDBDatabase> {
   return dbPromise;
 }
 
-function requestResult<T>(request: IDBRequest<T>): Promise<T> {
+export function requestResult<T>(request: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
 }
 
-function txDone(tx: IDBTransaction): Promise<void> {
+export function txDone(tx: IDBTransaction): Promise<void> {
   return new Promise((resolve, reject) => {
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);

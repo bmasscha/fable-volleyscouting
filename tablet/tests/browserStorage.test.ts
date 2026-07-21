@@ -9,6 +9,10 @@ import {
   matchExportFilename,
   saveAutosave,
   saveRosterLibrary,
+  exportRosterLibraryJson,
+  exportTeamJson,
+  teamExportFilename,
+  importTeamsFromJson,
   AUTOSAVE_KEY,
   ROSTER_LIBRARY_KEY,
   type MatchSnapshot,
@@ -252,5 +256,58 @@ describe("match export / import", () => {
   test("export filename combines team names and date", () => {
     const name = matchExportFilename(sampleSnapshot({ savedAt: Date.UTC(2026, 6, 20) }));
     expect(name).toMatch(/^Home-vs-Away-2026-07-\d\d\.fable\.json$/);
+  });
+});
+
+describe("single-team (desktop) export / import", () => {
+  const demoTeam = () =>
+    make_team(
+      "Demo Home",
+      [
+        make_player(1, "Anna", "setter", "h1"),
+        make_player(3, "Cato", "middle", "h3"),
+      ],
+      "#ff0000",
+    );
+
+  test("exportTeamJson matches the desktop team dict, indent 1", () => {
+    const team = demoTeam();
+    const json = exportTeamJson(team);
+
+    expect(JSON.parse(json)).toEqual(team_to_dict(team));
+    // indent=1 like core/persistence.save_team (json.dumps(indent=1))
+    expect(json).toContain('\n "name":');
+  });
+
+  test("teamExportFilename mirrors desktop _team_filename", () => {
+    expect(teamExportFilename(make_team("Demo Home", []))).toBe("Demo Home.json");
+    // illegal characters -> underscore; accented letters are kept (isalnum)
+    expect(teamExportFilename(make_team("FC/Barça #1", []))).toBe("FC_Barça _1.json");
+    expect(teamExportFilename(make_team("", []))).toBe("team.json");
+  });
+
+  test("importTeamsFromJson reads a single desktop team file", () => {
+    const team = demoTeam();
+    const teams = importTeamsFromJson(exportTeamJson(team));
+
+    expect(teams).toHaveLength(1);
+    expect(teams[0]!.name).toBe("Demo Home");
+    expect(teams[0]!.players.map((p) => p.id)).toEqual(["h1", "h3"]);
+  });
+
+  test("importTeamsFromJson reads a tablet roster bundle", () => {
+    const bundle = exportRosterLibraryJson([
+      make_team("Alpha", [make_player(2, "Two", undefined, "a1")], "#202020"),
+      make_team("Zeta", [make_player(1, "One", undefined, "z1")], "#101010"),
+    ]);
+    const teams = importTeamsFromJson(bundle);
+
+    expect(teams.map((t) => t.name).sort()).toEqual(["Alpha", "Zeta"]);
+  });
+
+  test("importTeamsFromJson rejects unrelated JSON", () => {
+    expect(() => importTeamsFromJson("{not json")).toThrow();
+    expect(() => importTeamsFromJson(JSON.stringify({ hello: "world" }))).toThrow();
+    expect(() => importTeamsFromJson(JSON.stringify(42))).toThrow();
   });
 });

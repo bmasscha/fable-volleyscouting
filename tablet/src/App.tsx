@@ -36,10 +36,25 @@ import {
   saveAutosave,
   saveRosterLibrary,
   exportRosterLibraryJson,
-  importRosterLibraryJson,
+  importTeamsFromJson,
+  exportTeamJson,
+  teamExportFilename,
   rosterExportFilename,
   saveUserSystems,
 } from "./browserStorage";
+import {
+  loadRosterLibraryIdb,
+  saveRosterLibraryIdb,
+  requestPersistentStorage,
+} from "./rosterStore";
+import {
+  isFolderSyncSupported,
+  linkedFolderName,
+  linkRosterFolder,
+  unlinkRosterFolder,
+  importTeamsFromLinkedFolder,
+  syncTeamsToFolder,
+} from "./rosterFileSync";
 import {
   MatchMeta,
   deleteMatch,
@@ -539,6 +554,13 @@ function RosterLibraryScreen({ library, onSaveLibrary, onBack }: RosterLibrarySc
   const [draftTeam, setDraftTeam] = useState<Team | null>(library[0] != null ? cloneTeam(library[0]) : null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // File System Access API folder sync (desktop Chrome/Edge only).
+  const folderSupported = isFolderSyncSupported();
+  const [folderName, setFolderName] = useState<string | null>(null);
+
+  useEffect(() => {
+    void linkedFolderName().then(setFolderName);
+  }, []);
 
   const selectedTeam = useMemo(
     () => library.find((team) => team.name === selectedTeamName) ?? null,
@@ -675,33 +697,51 @@ function RosterLibraryScreen({ library, onSaveLibrary, onBack }: RosterLibrarySc
     saveDraft(draftTeam, selectedTeam?.name ?? null);
   }
 
+  /** Merge incoming teams into a base library, replacing same-named teams. */
+  function mergeTeams(base: Team[], incoming: Team[]): Team[] {
+    const merged = [...base];
+    for (const team of incoming) {
+      const index = merged.findIndex((existing) => existing.name === team.name);
+      if (index >= 0) {
+        merged[index] = team;
+      } else {
+        merged.push(team);
+      }
+    }
+    return merged;
+  }
+
   function exportLibrary(): void {
     const json = exportRosterLibraryJson(library);
     downloadTextFile(rosterExportFilename(), json);
   }
 
-  function importLibrary(event: Event): void {
-    const file = (event.target as HTMLInputElement).files?.[0];
-    if (file == null) {
+  function exportTeam(): void {
+    if (selectedTeam == null) {
       return;
     }
-    file
-      .text()
-      .then((text) => {
+    downloadTextFile(teamExportFilename(selectedTeam), exportTeamJson(selectedTeam));
+  }
+
+  // Accepts several files at once and either shape: a tablet roster bundle or a
+  // desktop single-team rosters/*.json file. Every file is merged by name.
+  function importLibrary(event: Event): void {
+    const files = Array.from((event.target as HTMLInputElement).files ?? []);
+    if (files.length === 0) {
+      return;
+    }
+    Promise.all(files.map((file) => file.text()))
+      .then((texts) => {
         try {
-          const importedTeams = importRosterLibraryJson(text);
-          // Merge imported teams by replacing existing ones with same name
-          const merged = [...library];
-          for (const imported of importedTeams) {
-            const existingIndex = merged.findIndex((t) => t.name === imported.name);
-            if (existingIndex >= 0) {
-              merged[existingIndex] = imported;
-            } else {
-              merged.push(imported);
-            }
+          let merged = [...library];
+          let count = 0;
+          for (const text of texts) {
+            const imported = importTeamsFromJson(text);
+            merged = mergeTeams(merged, imported);
+            count += imported.length;
           }
           if (persist(merged)) {
-            setMessage(`Imported ${importedTeams.length} team(s).`);
+            setMessage(`Imported ${count} team(s).`);
             setError(null);
           }
         } catch (e) {
@@ -718,21 +758,77 @@ function RosterLibraryScreen({ library, onSaveLibrary, onBack }: RosterLibrarySc
       });
   }
 
+  // Link a real folder (a PC's desktop rosters/ folder): pull in any team files
+  // already there, then persist -- which writes the whole library back out and
+  // keeps auto-saving to it on every later change.
+  function linkFolder(): void {
+    void (async () => {
+      const name = await linkRosterFolder();
+      if (name == null) {
+        return;
+      }
+      setFolderName(name);
+      let merged = library;
+      try {
+        const found = await importTeamsFromLinkedFolder();
+        if (found.length > 0) {
+          merged = mergeTeams(library, found);
+        }
+      } catch {
+        // A folder we cannot read still becomes the write target below.
+      }
+      if (persist(merged)) {
+        setMessage(`Linked "${name}". Teams now auto-save to that folder as files.`);
+        setError(null);
+      }
+    })();
+  }
+
+  function unlinkFolder(): void {
+    void (async () => {
+      await unlinkRosterFolder();
+      setFolderName(null);
+      setMessage("Folder unlinked. The files already written were left in place.");
+      setError(null);
+    })();
+  }
+
   return (
     <main className="shell">
       <section className="editor-shell">
         <div className="screen-header">
           <div>
             <h1>Team library</h1>
-            <p className="muted">Saved only in this browser. Manage rosters before starting a match.</p>
+            {folderName != null ? (
+              <p className="muted">Auto-saving to folder "{folderName}" (survives clearing browser data).</p>
+            ) : (
+              <p className="muted">Saved in this browser. Export or link a folder to keep a copy off-device.</p>
+            )}
           </div>
           <div className="button-row compact">
+            {folderSupported ? (
+              folderName != null ? (
+                <button type="button" onClick={unlinkFolder}>
+                  Unlink folder
+                </button>
+              ) : (
+                <button type="button" onClick={linkFolder}>
+                  Link folder
+                </button>
+              )
+            ) : null}
             <button type="button" onClick={exportLibrary}>
               Export
             </button>
             <label className="button">
               Import
-              <input type="file" accept=".json" style={{ display: "none" }} onChange={importLibrary} />
+              <input
+                type="file"
+                accept=".json"
+                multiple
+                style={{ display: "none" }}
+                onChange={importLibrary}
+              />
             </label>
             <button type="button" onClick={createTeam}>
               New team
@@ -779,6 +875,9 @@ function RosterLibraryScreen({ library, onSaveLibrary, onBack }: RosterLibrarySc
                     <p className="muted">{dirty ? "Unsaved changes" : "Saved"}</p>
                   </div>
                   <div className="button-row compact">
+                    <button type="button" onClick={exportTeam}>
+                      Export team
+                    </button>
                     <button type="button" onClick={deleteTeam}>
                       Delete
                     </button>
@@ -1590,6 +1689,26 @@ export function App() {
         setStorageError("Saved matches could not be loaded on this device.");
       }
     })();
+
+    // Ask the browser to keep this origin's storage from being auto-evicted,
+    // then reconcile the durable IndexedDB team library with the fast
+    // localStorage cache we already painted. IDB wins when present; otherwise
+    // migrate the localStorage copy into IDB (first launch after this ships).
+    void requestPersistentStorage();
+    (async () => {
+      try {
+        const durable = await loadRosterLibraryIdb();
+        if (durable != null) {
+          const sorted = sortTeams(durable);
+          setRosterLibrary(sorted);
+          saveRosterLibrary(sorted); // keep the fast cache in step
+        } else {
+          await saveRosterLibraryIdb(savedLibrary);
+        }
+      } catch (error) {
+        console.warn("Durable team library is unavailable.", error);
+      }
+    })();
   }, []);
 
   async function refreshMatches(): Promise<void> {
@@ -1734,6 +1853,11 @@ export function App() {
     }
     setStorageError(null);
     setRosterLibrary(sorted);
+    // Durable copies, fire-and-forget: the IndexedDB mirror and (on a PC with a
+    // linked folder) the real on-disk desktop files. Failures are logged, never
+    // block the in-browser save above.
+    void saveRosterLibraryIdb(sorted);
+    void syncTeamsToFolder(sorted);
     return true;
   }
 
