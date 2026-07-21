@@ -1,7 +1,7 @@
-"""Desktop 6-2 rendering: only the setter actually running the offence
-is painted as a setter; the front-row setter reads as the attacker they
-are. Ambiguous lineups keep both marked and say why. Runs the real
-MainWindow headlessly (offscreen Qt)."""
+"""Desktop 6-2 rendering: every setter wears the team colour with an "S"
+badge, but only the setter actually running the offence gets the acting-setter
+ring (acting_setter=True). Ambiguous lineups ring both and say why. Runs the
+real MainWindow headlessly (offscreen Qt)."""
 import os
 
 import pytest
@@ -15,7 +15,6 @@ from core.engine import MatchEngine              # noqa: E402
 from core.events import RotationAdjustEvent      # noqa: E402
 from core.models import AWAY, HOME, MatchConfig, Role  # noqa: E402
 from ui.main_window import MainWindow            # noqa: E402
-from ui.player_token import SETTER_COLOR         # noqa: E402
 
 from .test_engine import make_teams, set_start_event  # noqa: E402
 
@@ -55,20 +54,23 @@ def token_of(win, player_id):
     return win.captured[player_id]
 
 
-def test_only_the_acting_setter_is_painted_as_setter(app):
+def test_only_the_acting_setter_is_ringed(app):
     win = make_window(app)                     # setters at P1 and P4
     s1 = win.teams[HOME].players[0].id         # P1, back row -> acting
     s2 = win.teams[HOME].players[3].id         # P4, front row -> hitting
     assert win._acting_setter_id(HOME) == s1
-    assert token_of(win, s1)["color"] == SETTER_COLOR
+    # both setters wear the team colour now; only the acting one is ringed
+    assert token_of(win, s1)["color"] == win.teams[HOME].color
     assert token_of(win, s2)["color"] == win.teams[HOME].color
+    assert token_of(win, s1)["acting_setter"] is True
+    assert token_of(win, s2)["acting_setter"] is False
     # both keep the S badge: they are setters by trade, one is hitting
     assert token_of(win, s1)["badge"] == "S"
     assert token_of(win, s2)["badge"] == "S"
     win.close()
 
 
-def test_the_blue_setter_changes_hands_on_the_handover(app):
+def test_the_acting_setter_ring_changes_hands_on_the_handover(app):
     win = make_window(app)
     s1 = win.teams[HOME].players[0].id
     s2 = win.teams[HOME].players[3].id
@@ -76,29 +78,30 @@ def test_the_blue_setter_changes_hands_on_the_handover(app):
     win._append(RotationAdjustEvent(team=HOME, steps=3))
     assert win.engine.state.team[HOME].lineup[0] == s2
     assert win._acting_setter_id(HOME) == s2
-    assert token_of(win, s2)["color"] == SETTER_COLOR
-    assert token_of(win, s1)["color"] == win.teams[HOME].color
+    assert token_of(win, s2)["acting_setter"] is True
+    assert token_of(win, s1)["acting_setter"] is False
     win.close()
 
 
-def test_five_one_setter_stays_blue_in_the_front_row(app):
+def test_five_one_setter_stays_ringed_in_the_front_row(app):
     win = make_window(app, setter_slots=(0,))  # a single setter
     s = win.teams[HOME].players[0].id
     win._append(RotationAdjustEvent(team=HOME, steps=3))   # rotate to front
     assert win.engine.state.team[HOME].lineup.index(s) in (1, 2, 3)
     assert win._acting_setter_id(HOME) == s
-    assert token_of(win, s)["color"] == SETTER_COLOR
+    assert token_of(win, s)["color"] == win.teams[HOME].color
+    assert token_of(win, s)["acting_setter"] is True
     win.close()
 
 
-def test_ambiguous_lineup_marks_both_and_explains(app):
+def test_ambiguous_lineup_rings_both_and_explains(app):
     win = make_window(app, setter_slots=(0, 4))   # both back row
     s1 = win.teams[HOME].players[0].id
     s2 = win.teams[HOME].players[4].id
     assert win._acting_setter_id(HOME) is None
-    # cannot tell who is setting -> keep both marked rather than neither
-    assert token_of(win, s1)["color"] == SETTER_COLOR
-    assert token_of(win, s2)["color"] == SETTER_COLOR
+    # cannot tell who is setting -> ring both rather than neither
+    assert token_of(win, s1)["acting_setter"] is True
+    assert token_of(win, s2)["acting_setter"] is True
     assert "diagonal" in win.scoreboard.alert.text()
     win.close()
 

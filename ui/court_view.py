@@ -170,7 +170,7 @@ class CourtView(QGraphicsView):
 
     def update_tokens(self, specs: list[dict]) -> None:
         """specs: dicts with keys team_key, player_id, number, name, color,
-        badge, x, y (court metres), highlight, serving."""
+        badge, x, y (court metres), highlight, serving, acting_setter."""
         wanted = set()
         for s in specs:
             key = (s["team_key"], s["player_id"])
@@ -182,7 +182,8 @@ class CourtView(QGraphicsView):
                 self._scene.addItem(token)
             token.set_appearance(s["number"], s["name"], s["color"],
                                  s.get("badge", ""), s.get("highlight", False),
-                                 s.get("serving", False))
+                                 s.get("serving", False),
+                                 s.get("acting_setter", False))
             token.setPos(s["x"] * M, s["y"] * M)
         for key in list(self._tokens):
             if key not in wanted:

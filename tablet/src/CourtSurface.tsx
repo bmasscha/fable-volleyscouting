@@ -9,6 +9,7 @@ import {
   FREE_ZONE_Y,
 } from "./core/rotation";
 import { CourtTokenSpec, CourtTrajectorySpec } from "./courtState";
+import { outlineFor } from "./tokenColors";
 
 /** Visual design mirrors the desktop app (ui/court_view.py + player_token.py):
  * flat colours, white 3px-equivalent lines, chunky dark net, open-wing
@@ -436,15 +437,37 @@ export function CourtSurface({
               cy={0}
               r={TOKEN_RADIUS}
               fill={token.color}
-              stroke="#ffffff"
+              stroke={token.ink}
               stroke-width={0.05}
             />
+            {token.actingSetter ? (
+              // thin auto-contrast ring marking the setter running the offence
+              // (matters in a 6-2); sits inside the gold selection highlight
+              // (r + 0.1) so both rings can show at once.
+              <circle
+                cx={0}
+                cy={0}
+                r={TOKEN_RADIUS + 0.03}
+                fill="none"
+                stroke={token.ink}
+                stroke-width={0.05}
+              />
+            ) : null}
             {token.badge !== "" ? (
-              <text x={0} y={-0.38} className="court-token-badge" text-anchor="middle">
+              <text x={0} y={-0.38} className="court-token-badge" text-anchor="middle" fill={token.ink}>
                 {token.badge}
               </text>
             ) : null}
-            <text x={0} y={0.18} className="court-token-number" text-anchor="middle">
+            <text
+              x={0}
+              y={0.18}
+              className="court-token-number"
+              text-anchor="middle"
+              fill={token.ink}
+              stroke={outlineFor(token.ink)}
+              stroke-width={0.03}
+              paint-order="stroke"
+            >
               {token.number}
             </text>
             {token.serving ? (

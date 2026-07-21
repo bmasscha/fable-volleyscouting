@@ -4,6 +4,7 @@ import { Mode, acting_setter_slot } from "./core/formations";
 import { Role, TeamKey, TEAM_KEYS, other, team_player } from "./core/models";
 import { COURT_HALF_LENGTH, COURT_WIDTH } from "./core/rotation";
 import { get_system, system_xy } from "./core/systems";
+import { inkFor, liberoColorFor } from "./tokenColors";
 
 export interface CandidateSelection {
   teamKey: TeamKey;
@@ -22,7 +23,9 @@ export interface CourtTokenSpec {
   number: number;
   name: string;
   color: string;
+  ink: string;
   badge: string;
+  actingSetter: boolean;
   x: number;
   y: number;
   highlight: boolean;
@@ -168,13 +171,20 @@ export function buildCourtTokens(
       // setter. Ambiguous lineup (no acting setter) -> mark both.
       const isActingSetter = isSetter && (acting === null || playerId === acting);
       const roleLabel = player.role.charAt(0).toUpperCase() + player.role.slice(1);
+      // The jersey colour is the user's free choice, so a setter wears the
+      // team colour with the "S" badge; the acting setter (running the
+      // offence, matters in a 6-2) is flagged for a thin ring instead of a
+      // special fill. The libero wears a derived, maximally distinct colour.
+      const color = isLibero ? liberoColorFor(team.color) : team.color;
       tokens.push({
         teamKey,
         playerId,
         number: player.number,
         name: showRolesEnabled ? roleLabel : player.name,
-        color: isLibero ? LIBERO_TOKEN_COLOR : isActingSetter ? SETTER_TOKEN_COLOR : team.color,
+        color,
+        ink: inkFor(color),
         badge: isLibero ? "L" : isSetter ? "S" : "",
+        actingSetter: isActingSetter && !isLibero,
         x: positions[playerId]![0],
         y: positions[playerId]![1],
         highlight: selected?.teamKey === teamKey && selected.playerId === playerId,

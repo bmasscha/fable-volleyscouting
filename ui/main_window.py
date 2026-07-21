@@ -43,9 +43,9 @@ from core.rotation import LEFT, RIGHT, serve_xy
 
 from .bench_panel import BenchPanel
 from .court_view import CourtView
-from .player_token import LIBERO_COLOR, SETTER_COLOR
 from .rating_bar import RatingBar
 from .scoreboard import Scoreboard
+from .token_colors import libero_color_for
 
 OUT_TOLERANCE = 0.4    # metres beyond the lines before a serve counts as out
 MATCHES_DIR = Path(__file__).resolve().parent.parent / "matches"
@@ -816,24 +816,25 @@ class MainWindow(QMainWindow):
                 if serving and st.phase == Phase.AWAIT_SERVE:
                     x, y = serve_xy(side)
                 if pid in ts.liberos or p.role == Role.LIBERO:
-                    color, badge = LIBERO_COLOR, "L"
+                    color = libero_color_for(self.teams[tk].color)
+                    badge, acting = "L", False
                 elif p.role == Role.SETTER:
-                    # in a 6-2 only the back-row setter runs the offence;
-                    # the other one is hitting right side, so only the
-                    # acting one is painted as a setter. Ambiguous lineup
-                    # (no acting setter) -> mark both, we cannot tell.
-                    if acting_setter is None or pid == acting_setter:
-                        color, badge = SETTER_COLOR, "S"
-                    else:
-                        color, badge = self.teams[tk].color, "S"
+                    # in a 6-2 only the back-row setter runs the offence; the
+                    # other one is hitting right side. A setter wears the team
+                    # colour with an "S" badge; only the *acting* setter gets
+                    # the ring. Ambiguous lineup (no acting setter) -> ring
+                    # both, we cannot tell.
+                    color = self.teams[tk].color
+                    badge = "S"
+                    acting = (acting_setter is None or pid == acting_setter)
                 else:
-                    color, badge = self.teams[tk].color, ""
+                    color, badge, acting = self.teams[tk].color, "", False
                 highlight = (self.candidate == (tk, pid))
                 display_name = p.role.value.title() if self.roles_action.isChecked() else p.name
                 specs.append(dict(team_key=tk, player_id=pid, number=p.number,
                                   name=display_name, color=color, badge=badge,
                                   x=x, y=y, highlight=highlight,
-                                  serving=serving))
+                                  serving=serving, acting_setter=acting))
         self.court.update_tokens(specs)
 
         # --- finished rally's arrows fade out instead of lingering until
@@ -853,9 +854,9 @@ class MainWindow(QMainWindow):
                 if p.id in ts.lineup:
                     continue
                 if p.id in ts.liberos:
-                    color, badge = LIBERO_COLOR, "L"
+                    color, badge = libero_color_for(self.teams[tk].color), "L"
                 elif p.role == Role.SETTER:
-                    color, badge = SETTER_COLOR, "S"
+                    color, badge = self.teams[tk].color, "S"
                 else:
                     color, badge = self.teams[tk].color, ""
                 entries.append(dict(player_id=p.id, number=p.number,

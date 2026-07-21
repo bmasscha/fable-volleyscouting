@@ -4,8 +4,6 @@ import { MatchEngine } from "../src/core/engine";
 import { HOME, AWAY, Role, Rating, TeamKey, default_config, make_player, make_team } from "../src/core/models";
 import { serve_xy } from "../src/core/rotation";
 import {
-  LIBERO_TOKEN_COLOR,
-  SETTER_TOKEN_COLOR,
   actingSetterId,
   buildCourtTokens,
   displayedPositions,
@@ -105,7 +103,7 @@ describe("court state helpers", () => {
     });
   });
 
-  test("paints only the acting setter as setter in a 6-2", () => {
+  test("rings only the acting setter in a 6-2", () => {
     // HOME as a 6-2: setters at P1 (back, acting) and P4 (front, hitting)
     const engine = makeSixTwoEngine();
     expect(actingSetterId(engine, HOME)).toBe("h1");
@@ -114,32 +112,35 @@ describe("court state helpers", () => {
     const acting = tokens.find((t) => t.playerId === "h1")!;
     const hitting = tokens.find((t) => t.playerId === "h4")!;
 
-    expect(acting.color).toBe(SETTER_TOKEN_COLOR);
+    // both wear the team colour now; only the acting one gets the ring
+    expect(acting.color).toBe(engine.teams.home.color);
     expect(hitting.color).toBe(engine.teams.home.color);
+    expect(acting.actingSetter).toBe(true);
+    expect(hitting.actingSetter).toBe(false);
     // both keep the S badge: setters by trade, one of them is hitting
     expect(acting.badge).toBe("S");
     expect(hitting.badge).toBe("S");
   });
 
-  test("the blue setter changes hands when the setters swap rows", () => {
+  test("the acting-setter ring changes hands when the setters swap rows", () => {
     const engine = makeSixTwoEngine();
     engine.append({ type: "rotation_adjust", team: HOME, steps: 3 });
     expect(engine.state.team.home.lineup[0]).toBe("h4");
     expect(actingSetterId(engine, HOME)).toBe("h4");
 
     const tokens = buildCourtTokens(engine, null, true);
-    expect(tokens.find((t) => t.playerId === "h4")!.color).toBe(SETTER_TOKEN_COLOR);
-    expect(tokens.find((t) => t.playerId === "h1")!.color).toBe(engine.teams.home.color);
+    expect(tokens.find((t) => t.playerId === "h4")!.actingSetter).toBe(true);
+    expect(tokens.find((t) => t.playerId === "h1")!.actingSetter).toBe(false);
   });
 
-  test("an ambiguous lineup keeps both setters marked", () => {
+  test("an ambiguous lineup rings both setters", () => {
     // setters at P1 and P5: both back row, acting one undecidable
     const engine = makeSixTwoEngine(["h1", "h2", "h3", "h5", "h4", "h6"]);
     expect(actingSetterId(engine, HOME)).toBeNull();
 
     const tokens = buildCourtTokens(engine, null, true);
-    expect(tokens.find((t) => t.playerId === "h1")!.color).toBe(SETTER_TOKEN_COLOR);
-    expect(tokens.find((t) => t.playerId === "h4")!.color).toBe(SETTER_TOKEN_COLOR);
+    expect(tokens.find((t) => t.playerId === "h1")!.actingSetter).toBe(true);
+    expect(tokens.find((t) => t.playerId === "h4")!.actingSetter).toBe(true);
   });
 
   test("detects serve errors based on the opponent court side", () => {

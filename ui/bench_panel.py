@@ -6,6 +6,8 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (QLabel, QPushButton, QScrollArea, QVBoxLayout,
                              QWidget)
 
+from .token_colors import ink_for
+
 
 class BenchPanel(QWidget):
     player_tapped = pyqtSignal(str, str)   # team_key, player_id
@@ -62,7 +64,8 @@ class BenchPanel(QWidget):
             badge = f" {e['badge']}" if e.get("badge") else ""
             btn.setText(f"#{e['number']}{badge}\n{e['name']}")
             btn.setStyleSheet(
-                f"QPushButton {{ font-size:14px; font-weight:600; color:white;"
+                f"QPushButton {{ font-size:14px; font-weight:600;"
+                f" color:{ink_for(e['color'])};"
                 f" background:{e['color']}; border-radius:8px; text-align:center; }}"
                 "QPushButton:checked { border: 3px solid #ffd600; }")
             btn.setChecked(pid == self._armed)

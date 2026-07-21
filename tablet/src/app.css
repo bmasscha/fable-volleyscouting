@@ -426,8 +426,10 @@ select {
   cursor: pointer;
 }
 
-/* token text mirrors ui/player_token.py: bold white number (15pt on the
-   desktop -> 0.5 m), small badge above, dark name below the disc */
+/* token text mirrors ui/player_token.py: bold number (15pt on the desktop
+   -> 0.5 m), small badge above, dark name below the disc. NOTE: the number
+   and badge fills below are a fallback only -- CourtSurface sets an inline
+   auto-contrast `fill` (token.ink) per token, which wins over these rules. */
 .court-token-number {
   fill: #ffffff;
   font-size: 0.5px;
