@@ -69,6 +69,7 @@ import {
   createFullBackupFromStorage,
   importFullAppBackupJson,
   restoreFullAppBackup,
+  restoreFromOpfs,
   autoSyncOpfsBackup,
   autoSyncOpfsBackupWithSession,
   tryRecoverFromOpfsIfEmpty,
@@ -488,6 +489,7 @@ interface StartupScreenProps {
   onClearAutosave: () => void;
   onExportFullBackup: () => void;
   onImportFullBackup: (file: File) => void;
+  onRestoreFromOpfs: () => void;
 }
 
 function StartupScreen({
@@ -502,6 +504,7 @@ function StartupScreen({
   onClearAutosave,
   onExportFullBackup,
   onImportFullBackup,
+  onRestoreFromOpfs,
 }: StartupScreenProps) {
   const fullBackupInputRef = useRef<HTMLInputElement>(null);
 
@@ -517,7 +520,7 @@ function StartupScreen({
 
         {rosterCount === 0 && matchCount === 0 ? (
           <div className="message-banner info" style={{ marginTop: "1rem" }}>
-            <strong>No data found.</strong> If browser history was cleared, you can restore all games and teams from a backup file.
+            <strong>No data found.</strong> If browser history was cleared, you can restore all games and teams from OPFS or a backup file.
           </div>
         ) : null}
 
@@ -582,8 +585,11 @@ function StartupScreen({
           <button type="button" className="ghost" onClick={onExportFullBackup}>
             Backup all data…
           </button>
+          <button type="button" className="ghost" onClick={onRestoreFromOpfs}>
+            Restore from OPFS
+          </button>
           <button type="button" className="ghost" onClick={() => fullBackupInputRef.current?.click()}>
-            Restore backup…
+            Restore backup file…
           </button>
         </div>
       </section>
@@ -2710,6 +2716,27 @@ export function App() {
     }
   }
 
+  async function handleRestoreFromOpfs(): Promise<void> {
+    try {
+      const result = await restoreFromOpfs();
+      if (result == null) {
+        setStorageError("No OPFS backup file found on this browser.");
+        return;
+      }
+      const saved = await listMatches();
+      const durable = await loadRosterLibraryIdb();
+      if (durable != null) {
+        setRosterLibrary(sortTeams(durable));
+      }
+      setMatches(saved);
+      setStorageError(null);
+      alert(`Restored ${result.matchCount} match(es), ${result.teamCount} team(s), and ${result.systemCount} custom system(s) from OPFS virtual storage.`);
+    } catch (error) {
+      console.warn("OPFS restore error.", error);
+      setStorageError("Failed to restore from OPFS storage.");
+    }
+  }
+
   if (session == null) {
     return (
       <StartupScreen
@@ -2730,6 +2757,7 @@ export function App() {
         onClearAutosave={discardAutosave}
         onExportFullBackup={() => void handleExportFullBackup()}
         onImportFullBackup={(file) => void handleImportFullBackup(file)}
+        onRestoreFromOpfs={() => void handleRestoreFromOpfs()}
       />
     );
   }

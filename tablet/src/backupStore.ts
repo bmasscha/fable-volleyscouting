@@ -242,6 +242,23 @@ export async function createFullBackupFromStorage(
   return exportFullAppBackupJson(matches, currentRosters, currentUserSystems, videoLinks);
 }
 
+/** Manually restore full state from OPFS virtual backup file.
+ * Returns match/team counts or null if OPFS backup is missing or invalid. */
+export async function restoreFromOpfs(): Promise<{ matchCount: number; teamCount: number; systemCount: number } | null> {
+  const opfsText = await loadOpfsBackup();
+  if (opfsText == null) {
+    return null;
+  }
+  try {
+    const backup = importFullAppBackupJson(opfsText);
+    return await restoreFullAppBackup(backup);
+  } catch (error) {
+    console.warn("OPFS manual restore failed.", error);
+    return null;
+  }
+}
+
+
 /** Create and trigger OPFS backup sync with current full state, explicitly ensuring
  * the active live session match snapshot is included regardless of transaction timing. */
 export async function autoSyncOpfsBackupWithSession(
