@@ -241,3 +241,28 @@ export async function createFullBackupFromStorage(
   const videoLinks = await getAllVideoLinks();
   return exportFullAppBackupJson(matches, currentRosters, currentUserSystems, videoLinks);
 }
+
+/** Create and trigger OPFS backup sync with current full state, explicitly ensuring
+ * the active live session match snapshot is included regardless of transaction timing. */
+export async function autoSyncOpfsBackupWithSession(
+  activeSession: MatchSnapshot | null,
+  rosterLibrary: Team[],
+  userSystems: SystemSpec[],
+): Promise<boolean> {
+  try {
+    const archived = await loadAllMatches();
+    const map = new Map<string, MatchSnapshot>();
+    for (const m of archived) {
+      map.set(m.id, m);
+    }
+    if (activeSession != null) {
+      map.set(activeSession.id, activeSession);
+    }
+    const allMatches = Array.from(map.values());
+    return await autoSyncOpfsBackup(allMatches, rosterLibrary, userSystems);
+  } catch (error) {
+    console.warn("OPFS session auto-sync failed.", error);
+    return false;
+  }
+}
+

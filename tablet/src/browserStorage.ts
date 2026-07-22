@@ -237,6 +237,34 @@ export function downloadTextFile(filename: string, text: string): void {
   URL.revokeObjectURL(url);
 }
 
+/** Share text as a file using the Web Share API (navigator.share) when supported
+ * on mobile/tablet devices (iOS Safari, Android Chrome). Falls back to browser
+ * file download when Web Share API with files is unavailable. */
+export async function shareTextFile(
+  filename: string,
+  text: string,
+  title: string = filename,
+): Promise<boolean> {
+  const file = new File([text], filename, { type: "application/json" });
+  const nav = globalThis.navigator as {
+    canShare?: (data?: { files?: File[] }) => boolean;
+    share?: (data?: { title?: string; files?: File[] }) => Promise<void>;
+  };
+  if (nav?.canShare != null && nav.canShare({ files: [file] }) && nav.share != null) {
+    try {
+      await nav.share({ title, files: [file] });
+      return true;
+    } catch (error) {
+      if ((error as { name?: string }).name === "AbortError") {
+        return true;
+      }
+    }
+  }
+  downloadTextFile(filename, text);
+  return false;
+}
+
+
 export function clearAutosave(): boolean {
   return removeStorageItem(AUTOSAVE_KEY);
 }

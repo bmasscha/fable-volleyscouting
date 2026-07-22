@@ -42,6 +42,7 @@ import {
   rosterExportFilename,
   saveUserSystems,
   fullBackupExportFilename,
+  shareTextFile,
 } from "./browserStorage";
 import {
   loadRosterLibraryIdb,
@@ -69,6 +70,7 @@ import {
   importFullAppBackupJson,
   restoreFullAppBackup,
   autoSyncOpfsBackup,
+  autoSyncOpfsBackupWithSession,
   tryRecoverFromOpfsIfEmpty,
 } from "./backupStore";
 import { VideoReview } from "./VideoReview";
@@ -1068,6 +1070,7 @@ interface SavedMatchesScreenProps {
   onExport: (id: string) => void;
   onDelete: (id: string) => void;
   onImport: (file: File) => void;
+  onExportFullBackup: () => void;
   onBack: () => void;
 }
 
@@ -1079,6 +1082,7 @@ function SavedMatchesScreen({
   onExport,
   onDelete,
   onImport,
+  onExportFullBackup,
   onBack,
 }: SavedMatchesScreenProps) {
   const importInput = useRef<HTMLInputElement>(null);
@@ -1088,6 +1092,9 @@ function SavedMatchesScreen({
         <div className="library-header">
           <h1>Saved matches</h1>
           <div className="button-row">
+            <button type="button" onClick={onExportFullBackup}>
+              Backup all data…
+            </button>
             <button type="button" onClick={() => importInput.current?.click()}>
               Import match…
             </button>
@@ -1881,20 +1888,15 @@ export function App() {
     } else {
       setStorageError(null);
     }
-    // Mirror into the durable archive so every match survives starting the
-    // next one. Fire-and-forget: the localStorage autosave above is the
-    // instant crash buffer; an archive write failure only surfaces a banner.
-    void putMatch(nextSession).catch((error) => {
-      console.warn("Match archive write failed.", error);
-      setStorageError("This match could not be saved to the archive on this device.");
-    });
-    // Auto-sync OPFS backup layer
+    // Await putMatch FIRST so IndexedDB is guaranteed updated before OPFS sync runs,
+    // and explicitly pass nextSession to autoSyncOpfsBackupWithSession.
     void (async () => {
       try {
-        const allMatches = await loadAllMatches();
-        await autoSyncOpfsBackup(allMatches, rosterLibrary, loadUserSystems());
-      } catch {
-        // best-effort OPFS background sync
+        await putMatch(nextSession);
+        await autoSyncOpfsBackupWithSession(nextSession, rosterLibrary, loadUserSystems());
+      } catch (error) {
+        console.warn("Match archive write / OPFS auto-sync failed.", error);
+        setStorageError("This match could not be saved to the archive on this device.");
       }
     })();
   }
@@ -2567,13 +2569,28 @@ export function App() {
     setScreen("video");
   }
 
+  async function exportActiveMatch(): Promise<void> {
+    if (session == null) {
+      return;
+    }
+    await shareTextFile(
+      matchExportFilename(session),
+      exportMatchJson(session),
+      `Match: ${session.teams[HOME].name} vs ${session.teams[AWAY].name}`,
+    );
+  }
+
   async function exportStoredMatch(id: string): Promise<void> {
     const snapshot = await getMatch(id);
     if (snapshot == null) {
       setStorageError("That match could not be exported on this device.");
       return;
     }
-    downloadTextFile(matchExportFilename(snapshot), exportMatchJson(snapshot));
+    await shareTextFile(
+      matchExportFilename(snapshot),
+      exportMatchJson(snapshot),
+      `Match: ${snapshot.teams[HOME].name} vs ${snapshot.teams[AWAY].name}`,
+    );
   }
 
   async function deleteStoredMatch(id: string): Promise<void> {
@@ -2622,6 +2639,7 @@ export function App() {
         onExport={(id) => void exportStoredMatch(id)}
         onDelete={(id) => void deleteStoredMatch(id)}
         onImport={(file) => void importMatchFile(file)}
+        onExportFullBackup={() => void handleExportFullBackup()}
         onBack={() => setScreen(session == null ? "startup" : "match")}
       />
     );
@@ -2665,7 +2683,7 @@ export function App() {
   async function handleExportFullBackup(): Promise<void> {
     try {
       const json = await createFullBackupFromStorage(rosterLibrary, loadUserSystems());
-      downloadTextFile(fullBackupExportFilename(), json);
+      await shareTextFile(fullBackupExportFilename(), json, "Fable Scouter Full Backup");
       setStorageError(null);
     } catch (error) {
       console.warn("Full backup export failed.", error);
@@ -2816,6 +2834,9 @@ export function App() {
           <button type="button" className={toolsOpen ? "primary" : ""} onClick={() => setToolsOpen((current) => !current)}>
             Tools
           </button>
+          <button type="button" className="ghost" onClick={() => void exportActiveMatch()}>
+            Export
+          </button>
           <button
             type="button"
             className="ghost"
@@ -2892,9 +2913,6 @@ export function App() {
             </button>
             <button type="button" className="action-big" onClick={() => setEditingNextSet(true)}>
               Edit lineups
-            </button>
-            <button type="button" className="action-big rate-undo" onClick={undoLast} disabled={session.events.length <= 1}>
-              ⟲<small>undo</small>
             </button>
           </div>
         ) : engine.state.phase === Phase.MATCH_OVER ? (
@@ -2999,6 +3017,23 @@ export function App() {
                 Close
               </button>
             </div>
+
+            <section className="controls-grid" style={{ marginBottom: "1rem" }}>
+              <article className="control-card">
+                <h2>Storage & Backups</h2>
+                <p className="muted">
+                  Live data is saved automatically on every event to IndexedDB and OPFS virtual storage.
+                </p>
+                <div className="button-row compact">
+                  <button type="button" onClick={() => void exportActiveMatch()}>
+                    Export match file…
+                  </button>
+                  <button type="button" onClick={() => void handleExportFullBackup()}>
+                    Backup all data…
+                  </button>
+                </div>
+              </article>
+            </section>
 
             <section className="team-grid">
               {TEAM_KEYS.map((teamKey) => (
