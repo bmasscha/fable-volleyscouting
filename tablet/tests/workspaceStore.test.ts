@@ -108,6 +108,32 @@ describe("workspaceStore engine", () => {
     expect(matches[0].teams.home.name).toBe("Home");
   });
 
+  test("writeWorkspaceTeams keeps a team file not in the library (e.g. hand-copied)", async () => {
+    const mock = createMockDirectory();
+    const alpha = make_team("Alpha", [make_player(1, "Player 1")]);
+    const beta = make_team("Beta", [make_player(2, "Player 2")]);
+    // Beta lands in the folder (stand-in for a roster copied straight into rosters/).
+    await writeWorkspaceTeams(mock.handle, [alpha, beta]);
+
+    // A later save of only Alpha, WITHOUT marking Beta removed, must not delete Beta.
+    await writeWorkspaceTeams(mock.handle, [alpha]);
+
+    const readBack = await readWorkspaceTeams(mock.handle);
+    expect(readBack.map((t) => t.name).sort()).toEqual(["Alpha", "Beta"]);
+  });
+
+  test("writeWorkspaceTeams removes only teams explicitly marked as removed", async () => {
+    const mock = createMockDirectory();
+    const alpha = make_team("Alpha", [make_player(1, "Player 1")]);
+    const beta = make_team("Beta", [make_player(2, "Player 2")]);
+    await writeWorkspaceTeams(mock.handle, [alpha, beta]);
+
+    await writeWorkspaceTeams(mock.handle, [alpha], [beta]);
+
+    const readBack = await readWorkspaceTeams(mock.handle);
+    expect(readBack.map((t) => t.name)).toEqual(["Alpha"]);
+  });
+
   test("readFullWorkspaceState scans both root directory and subdirectories", async () => {
     const mock = createMockDirectory();
     const team = make_team("RootTeam", [make_player(1, "R1")]);

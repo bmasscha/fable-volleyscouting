@@ -76,17 +76,22 @@ import {
   tryRecoverFromOpfsIfEmpty,
 } from "./backupStore";
 import {
+  clearWorkspaceFlushPending,
   deleteWorkspaceMatch,
   getWorkspaceFolderName,
+  isWorkspaceFlushPending,
   isWorkspacePickerSupported,
   linkWorkspaceFolder,
   loadWorkspaceHandle,
   readFullWorkspaceState,
+  requestWorkspaceAccess,
   unlinkWorkspaceFolder,
+  workspaceAccessGranted,
   writeWorkspaceMatch,
   writeWorkspaceSystems,
   writeWorkspaceTeams,
 } from "./workspaceStore";
+import { FsDirectoryHandle } from "./rosterFileSync";
 import { VideoReview } from "./VideoReview";
 import {
   MatchSetupDraft,
@@ -497,6 +502,7 @@ interface StartupScreenProps {
   storageError: string | null;
   workspaceName: string | null;
   workspaceSupported: boolean;
+  workspaceNeedsReconnect: boolean;
   onResume: () => void;
   onNewMatch: () => void;
   onSavedMatches: () => void;
@@ -508,6 +514,7 @@ interface StartupScreenProps {
   onLinkWorkspace: () => void;
   onUnlinkWorkspace: () => void;
   onRescanWorkspace: () => void;
+  onReconnectWorkspace: () => void;
 }
 
 function StartupScreen({
@@ -517,6 +524,7 @@ function StartupScreen({
   storageError,
   workspaceName,
   workspaceSupported,
+  workspaceNeedsReconnect,
   onResume,
   onNewMatch,
   onSavedMatches,
@@ -528,6 +536,7 @@ function StartupScreen({
   onLinkWorkspace,
   onUnlinkWorkspace,
   onRescanWorkspace,
+  onReconnectWorkspace,
 }: StartupScreenProps) {
   const fullBackupInputRef = useRef<HTMLInputElement>(null);
 
@@ -543,15 +552,30 @@ function StartupScreen({
 
         {workspaceSupported ? (
           workspaceName != null ? (
-            <div className="message-banner success" style={{ marginTop: "1rem" }}>
-              Workspace: <strong>{workspaceName}</strong> (Linked ✓ — saves to disk subfolders)
-              <button type="button" className="ghost" onClick={onRescanWorkspace} style={{ marginLeft: "0.5rem" }}>
-                Re-scan Folder
-              </button>
-              <button type="button" className="ghost" onClick={onUnlinkWorkspace} style={{ marginLeft: "0.5rem" }}>
-                Unlink
-              </button>
-            </div>
+            workspaceNeedsReconnect ? (
+              <div className="message-banner error" style={{ marginTop: "1rem" }}>
+                Workspace <strong>{workspaceName}</strong> needs to be reconnected to save to disk.
+                Your data is safe on this device meanwhile.
+                <div style={{ marginTop: "0.5rem" }}>
+                  <button type="button" className="primary" onClick={onReconnectWorkspace}>
+                    Reconnect &amp; Save to Folder
+                  </button>
+                  <button type="button" className="ghost" onClick={onUnlinkWorkspace} style={{ marginLeft: "0.5rem" }}>
+                    Unlink
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="message-banner success" style={{ marginTop: "1rem" }}>
+                Workspace: <strong>{workspaceName}</strong> (Linked ✓ — saves to disk subfolders)
+                <button type="button" className="ghost" onClick={onRescanWorkspace} style={{ marginLeft: "0.5rem" }}>
+                  Re-scan Folder
+                </button>
+                <button type="button" className="ghost" onClick={onUnlinkWorkspace} style={{ marginLeft: "0.5rem" }}>
+                  Unlink
+                </button>
+              </div>
+            )
           ) : (
             <div className="message-banner info" style={{ marginTop: "1rem" }}>
               <strong>Set Data Workspace Location:</strong> Pick a folder on your tablet or Google Drive to store teams, matches, and custom systems natively as files.
@@ -1755,6 +1779,12 @@ export function App() {
   const [storageError, setStorageError] = useState<string | null>(null);
   const workspaceSupported = isWorkspacePickerSupported();
   const [workspaceName, setWorkspaceName] = useState<string | null>(null);
+  // The linked workspace handle, cached for this page session so background
+  // writes never re-read IndexedDB and never re-prompt for permission.
+  const workspaceHandleRef = useRef<FsDirectoryHandle | null>(null);
+  // Set when a background disk write was skipped because folder permission
+  // lapsed; drives the "Reconnect workspace" control (data stays safe in IDB).
+  const [workspaceNeedsReconnect, setWorkspaceNeedsReconnect] = useState(false);
 
   const [formationsEnabled, setFormationsEnabled] = useState(true);
   const [showRolesEnabled, setShowRolesEnabled] = useState(false);
@@ -1787,19 +1817,29 @@ export function App() {
       try {
         const wsHandle = await loadWorkspaceHandle();
         if (wsHandle != null) {
+          workspaceHandleRef.current = wsHandle;
           setWorkspaceName(wsHandle.name);
-          try {
-            const wsState = await readFullWorkspaceState(wsHandle);
-            if (wsState.matches.length > 0 || wsState.teams.length > 0) {
-              await putMatches(wsState.matches);
-              await saveRosterLibraryIdb(wsState.teams);
-              saveRosterLibrary(wsState.teams);
-              if (wsState.systems.length > 0) {
-                saveUserSystems(wsState.systems);
+          // Query (never prompt) whether the folder is still accessible. At page
+          // load there is no user gesture, so we cannot request access here.
+          if (await workspaceAccessGranted(wsHandle)) {
+            try {
+              const wsState = await readFullWorkspaceState(wsHandle);
+              if (wsState.matches.length > 0 || wsState.teams.length > 0) {
+                await putMatches(wsState.matches);
+                await saveRosterLibraryIdb(wsState.teams);
+                saveRosterLibrary(wsState.teams);
+                if (wsState.systems.length > 0) {
+                  saveUserSystems(wsState.systems);
+                }
               }
+            } catch (wsError) {
+              console.warn("Workspace disk auto-scan failed; reconnect needed.", wsError);
+              setWorkspaceNeedsReconnect(true);
             }
-          } catch (wsError) {
-            console.warn("Workspace disk auto-scan required permission or re-link.", wsError);
+          } else {
+            // Permission lapsed (common on Android after a reload) — the user
+            // grants it again with one tap on the Reconnect control.
+            setWorkspaceNeedsReconnect(true);
           }
         }
 
@@ -1952,6 +1992,32 @@ export function App() {
     setDigPlayer((current) => (digOptions.some((option) => option.id === current) ? current : fallback));
   }, [digOptions]);
 
+  // Fire-and-forget grant attempt to be called from within a user gesture. On
+  // success it clears the reconnect flag and flushes anything that piled up in
+  // IndexedDB while the folder was disconnected. Never prompts more than the one
+  // system dialog; if declined, the Reconnect control stays available.
+  function ensureWorkspaceAccessFromGesture(): void {
+    const wsHandle = workspaceHandleRef.current;
+    if (wsHandle == null) {
+      return;
+    }
+    void (async () => {
+      try {
+        if (await requestWorkspaceAccess(wsHandle)) {
+          if (isWorkspaceFlushPending()) {
+            for (const m of await loadAllMatches()) {
+              await writeWorkspaceMatch(wsHandle, m);
+            }
+            clearWorkspaceFlushPending();
+          }
+          setWorkspaceNeedsReconnect(false);
+        }
+      } catch {
+        // best-effort; the Reconnect control remains as a fallback
+      }
+    })();
+  }
+
   function commit(nextSession: MatchSnapshot): void {
     setSession(nextSession);
     setAutosave(nextSession);
@@ -1966,9 +2032,16 @@ export function App() {
       try {
         await putMatch(nextSession);
         await autoSyncOpfsBackupWithSession(nextSession, rosterLibrary, loadUserSystems());
-        const wsHandle = await loadWorkspaceHandle();
+        // Log every action to the workspace folder. Uses the already-granted
+        // handle and only *queries* permission, so scouting never triggers a
+        // permission dialog. If access has lapsed the write is skipped (data is
+        // already in IndexedDB/OPFS) and the Reconnect control is surfaced.
+        const wsHandle = workspaceHandleRef.current;
         if (wsHandle != null) {
-          await writeWorkspaceMatch(wsHandle, nextSession);
+          const ok = await writeWorkspaceMatch(wsHandle, nextSession);
+          if (!ok) {
+            setWorkspaceNeedsReconnect(true);
+          }
         }
       } catch (error) {
         console.warn("Match archive write / OPFS auto-sync / workspace sync failed.", error);
@@ -1979,22 +2052,30 @@ export function App() {
 
   function persistRosterLibrary(nextLibrary: Team[]): boolean {
     const sorted = sortTeams(nextLibrary);
+    // Teams the user removed in this save — the ONLY files we delete from disk.
+    const removedTeams = rosterLibrary.filter(
+      (prev) => !sorted.some((team) => team.name === prev.name),
+    );
     if (!saveRosterLibrary(sorted)) {
       setStorageError("Team library changes could not be saved in this browser.");
       return false;
     }
     setStorageError(null);
     setRosterLibrary(sorted);
-    // Durable copies, fire-and-forget: IndexedDB, desktop folder sync, OPFS backup, and root Workspace folder
+    // Durable copies, fire-and-forget: IndexedDB, desktop folder sync, OPFS backup, and root Workspace folder.
+    // This runs only on an explicit library save, so teams reach disk only when actually changed.
     void saveRosterLibraryIdb(sorted);
     void syncTeamsToFolder(sorted);
     void (async () => {
       try {
         const allMatches = await loadAllMatches();
         await autoSyncOpfsBackup(allMatches, sorted, loadUserSystems());
-        const wsHandle = await loadWorkspaceHandle();
+        const wsHandle = workspaceHandleRef.current;
         if (wsHandle != null) {
-          await writeWorkspaceTeams(wsHandle, sorted);
+          const ok = await writeWorkspaceTeams(wsHandle, sorted, removedTeams);
+          if (!ok) {
+            setWorkspaceNeedsReconnect(true);
+          }
         }
       } catch {
         // best-effort background sync
@@ -2031,6 +2112,10 @@ export function App() {
   }
 
   function startConfiguredMatch(result: MatchSetupResult): void {
+    // This tap is a user gesture, so it is a good moment to (re)grant folder
+    // access once for the whole scouting session — after this, per-event writes
+    // never need to prompt again.
+    ensureWorkspaceAccessFromGesture();
     const now = Date.now();
     commit({
       id: newMatchId(),
@@ -2679,7 +2764,7 @@ export function App() {
     }
     try {
       await deleteMatch(id);
-      const wsHandle = await loadWorkspaceHandle();
+      const wsHandle = workspaceHandleRef.current;
       if (wsHandle != null) {
         await deleteWorkspaceMatch(wsHandle, id);
       }
@@ -2703,7 +2788,7 @@ export function App() {
     try {
       const snapshot = importMatchJson(await file.text(), true);
       await putMatch(snapshot);
-      const wsHandle = await loadWorkspaceHandle();
+      const wsHandle = workspaceHandleRef.current;
       if (wsHandle != null) {
         await writeWorkspaceMatch(wsHandle, snapshot);
       }
@@ -2767,11 +2852,21 @@ export function App() {
   }
 
   async function handleRescanWorkspace(): Promise<void> {
-    const wsHandle = await loadWorkspaceHandle();
+    const wsHandle = workspaceHandleRef.current ?? (await loadWorkspaceHandle());
     if (wsHandle == null) {
       setStorageError("No workspace folder currently linked.");
       return;
     }
+    workspaceHandleRef.current = wsHandle;
+    // Rescan is always user-initiated (Link / Rescan / Reconnect buttons), so we
+    // may request access here; this is the one place the grant is (re)obtained.
+    if (!(await requestWorkspaceAccess(wsHandle))) {
+      setWorkspaceNeedsReconnect(true);
+      setStorageError("Workspace folder access was not granted.");
+      return;
+    }
+    setWorkspaceNeedsReconnect(false);
+    clearWorkspaceFlushPending();
     try {
       const wsState = await readFullWorkspaceState(wsHandle);
       if (wsState.matches.length > 0 || wsState.teams.length > 0 || wsState.systems.length > 0) {
@@ -2815,8 +2910,46 @@ export function App() {
   async function handleLinkWorkspace(): Promise<void> {
     const name = await linkWorkspaceFolder();
     if (name != null) {
+      workspaceHandleRef.current = await loadWorkspaceHandle();
       setWorkspaceName(name);
+      setWorkspaceNeedsReconnect(false);
       await handleRescanWorkspace();
+    }
+  }
+
+  // Re-grant access after a lapse and PUSH everything currently in the app to
+  // disk. Unlike Rescan (which pulls disk -> app), this never overwrites the
+  // live data with an older on-disk copy, so events logged while the folder was
+  // disconnected are flushed out rather than lost.
+  async function handleReconnectWorkspace(): Promise<void> {
+    const wsHandle = workspaceHandleRef.current ?? (await loadWorkspaceHandle());
+    if (wsHandle == null) {
+      setStorageError("No workspace folder currently linked.");
+      return;
+    }
+    workspaceHandleRef.current = wsHandle;
+    if (!(await requestWorkspaceAccess(wsHandle))) {
+      setWorkspaceNeedsReconnect(true);
+      setStorageError("Workspace folder access was not granted.");
+      return;
+    }
+    try {
+      if (rosterLibrary.length > 0) {
+        await writeWorkspaceTeams(wsHandle, rosterLibrary);
+      }
+      for (const m of await loadAllMatches()) {
+        await writeWorkspaceMatch(wsHandle, m);
+      }
+      const sys = loadUserSystems();
+      if (sys.length > 0) {
+        await writeWorkspaceSystems(wsHandle, sys);
+      }
+      clearWorkspaceFlushPending();
+      setWorkspaceNeedsReconnect(false);
+      setStorageError(null);
+    } catch (error) {
+      console.warn("Workspace reconnect flush failed.", error);
+      setStorageError("Could not save to the workspace folder. Try Reconnect again.");
     }
   }
 
@@ -2847,7 +2980,7 @@ export function App() {
         setRosterLibrary(sortTeams(durable));
       }
       setMatches(saved);
-      const wsHandle = await loadWorkspaceHandle();
+      const wsHandle = workspaceHandleRef.current;
       if (wsHandle != null) {
         await writeWorkspaceTeams(wsHandle, durable ?? rosterLibrary);
         for (const m of backup.matches) {
@@ -2893,8 +3026,10 @@ export function App() {
         storageError={storageError}
         workspaceName={workspaceName}
         workspaceSupported={workspaceSupported}
+        workspaceNeedsReconnect={workspaceNeedsReconnect}
         onResume={() => {
           if (autosave != null) {
+            ensureWorkspaceAccessFromGesture();
             resetTransientInputs();
             setSession(autosave);
             setScreen("match");
@@ -2910,6 +3045,7 @@ export function App() {
         onLinkWorkspace={() => void handleLinkWorkspace()}
         onUnlinkWorkspace={() => void handleUnlinkWorkspace()}
         onRescanWorkspace={() => void handleRescanWorkspace()}
+        onReconnectWorkspace={() => void handleReconnectWorkspace()}
       />
     );
   }
