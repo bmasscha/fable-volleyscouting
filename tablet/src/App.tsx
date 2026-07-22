@@ -63,6 +63,7 @@ import {
   getMatch,
   listMatches,
   putMatch,
+  putMatches,
   loadAllMatches,
 } from "./matchStore";
 import {
@@ -74,6 +75,18 @@ import {
   autoSyncOpfsBackupWithSession,
   tryRecoverFromOpfsIfEmpty,
 } from "./backupStore";
+import {
+  deleteWorkspaceMatch,
+  getWorkspaceFolderName,
+  isWorkspacePickerSupported,
+  linkWorkspaceFolder,
+  loadWorkspaceHandle,
+  readFullWorkspaceState,
+  unlinkWorkspaceFolder,
+  writeWorkspaceMatch,
+  writeWorkspaceSystems,
+  writeWorkspaceTeams,
+} from "./workspaceStore";
 import { VideoReview } from "./VideoReview";
 import {
   MatchSetupDraft,
@@ -482,6 +495,8 @@ interface StartupScreenProps {
   rosterCount: number;
   matchCount: number;
   storageError: string | null;
+  workspaceName: string | null;
+  workspaceSupported: boolean;
   onResume: () => void;
   onNewMatch: () => void;
   onSavedMatches: () => void;
@@ -490,6 +505,8 @@ interface StartupScreenProps {
   onExportFullBackup: () => void;
   onImportFullBackup: (file: File) => void;
   onRestoreFromOpfs: () => void;
+  onLinkWorkspace: () => void;
+  onUnlinkWorkspace: () => void;
 }
 
 function StartupScreen({
@@ -497,6 +514,8 @@ function StartupScreen({
   rosterCount,
   matchCount,
   storageError,
+  workspaceName,
+  workspaceSupported,
   onResume,
   onNewMatch,
   onSavedMatches,
@@ -505,6 +524,8 @@ function StartupScreen({
   onExportFullBackup,
   onImportFullBackup,
   onRestoreFromOpfs,
+  onLinkWorkspace,
+  onUnlinkWorkspace,
 }: StartupScreenProps) {
   const fullBackupInputRef = useRef<HTMLInputElement>(null);
 
@@ -518,7 +539,27 @@ function StartupScreen({
         </p>
         {storageError != null ? <div className="message-banner error">{storageError}</div> : null}
 
-        {rosterCount === 0 && matchCount === 0 ? (
+        {workspaceSupported ? (
+          workspaceName != null ? (
+            <div className="message-banner success" style={{ marginTop: "1rem" }}>
+              Workspace: <strong>{workspaceName}</strong> (Linked ✓ — saves to disk subfolders)
+              <button type="button" className="ghost" onClick={onUnlinkWorkspace} style={{ marginLeft: "0.5rem" }}>
+                Unlink
+              </button>
+            </div>
+          ) : (
+            <div className="message-banner info" style={{ marginTop: "1rem" }}>
+              <strong>Set Data Workspace Location:</strong> Pick a folder on your tablet or Google Drive to store teams, matches, and custom systems natively as files.
+              <div style={{ marginTop: "0.5rem" }}>
+                <button type="button" className="primary" onClick={onLinkWorkspace}>
+                  Set Workspace Folder…
+                </button>
+              </div>
+            </div>
+          )
+        ) : null}
+
+        {rosterCount === 0 && matchCount === 0 && workspaceName == null ? (
           <div className="message-banner info" style={{ marginTop: "1rem" }}>
             <strong>No data found.</strong> If browser history was cleared, you can restore all games and teams from OPFS or a backup file.
           </div>
@@ -1707,6 +1748,8 @@ export function App() {
   const [libraryReturnScreen, setLibraryReturnScreen] = useState<"startup" | "setup">("startup");
   const [setupDraft, setSetupDraft] = useState<MatchSetupDraft | null>(null);
   const [storageError, setStorageError] = useState<string | null>(null);
+  const workspaceSupported = isWorkspacePickerSupported();
+  const [workspaceName, setWorkspaceName] = useState<string | null>(null);
 
   const [formationsEnabled, setFormationsEnabled] = useState(true);
   const [showRolesEnabled, setShowRolesEnabled] = useState(false);
@@ -1737,6 +1780,24 @@ export function App() {
 
     (async () => {
       try {
+        const wsHandle = await loadWorkspaceHandle();
+        if (wsHandle != null) {
+          setWorkspaceName(wsHandle.name);
+          try {
+            const wsState = await readFullWorkspaceState(wsHandle);
+            if (wsState.matches.length > 0 || wsState.teams.length > 0) {
+              await putMatches(wsState.matches);
+              await saveRosterLibraryIdb(wsState.teams);
+              saveRosterLibrary(wsState.teams);
+              if (wsState.systems.length > 0) {
+                saveUserSystems(wsState.systems);
+              }
+            }
+          } catch (wsError) {
+            console.warn("Workspace disk auto-scan required permission or re-link.", wsError);
+          }
+        }
+
         let saved = await listMatches();
         let durableRosters = await loadRosterLibraryIdb();
 
@@ -1894,14 +1955,18 @@ export function App() {
     } else {
       setStorageError(null);
     }
-    // Await putMatch FIRST so IndexedDB is guaranteed updated before OPFS sync runs,
-    // and explicitly pass nextSession to autoSyncOpfsBackupWithSession.
+    // Await putMatch FIRST so IndexedDB is guaranteed updated before OPFS & Workspace sync run,
+    // and explicitly pass nextSession to autoSyncOpfsBackupWithSession and writeWorkspaceMatch.
     void (async () => {
       try {
         await putMatch(nextSession);
         await autoSyncOpfsBackupWithSession(nextSession, rosterLibrary, loadUserSystems());
+        const wsHandle = await loadWorkspaceHandle();
+        if (wsHandle != null) {
+          await writeWorkspaceMatch(wsHandle, nextSession);
+        }
       } catch (error) {
-        console.warn("Match archive write / OPFS auto-sync failed.", error);
+        console.warn("Match archive write / OPFS auto-sync / workspace sync failed.", error);
         setStorageError("This match could not be saved to the archive on this device.");
       }
     })();
@@ -1915,17 +1980,19 @@ export function App() {
     }
     setStorageError(null);
     setRosterLibrary(sorted);
-    // Durable copies, fire-and-forget: the IndexedDB mirror and (on a PC with a
-    // linked folder) the real on-disk desktop files. Failures are logged, never
-    // block the in-browser save above.
+    // Durable copies, fire-and-forget: IndexedDB, desktop folder sync, OPFS backup, and root Workspace folder
     void saveRosterLibraryIdb(sorted);
     void syncTeamsToFolder(sorted);
     void (async () => {
       try {
         const allMatches = await loadAllMatches();
         await autoSyncOpfsBackup(allMatches, sorted, loadUserSystems());
+        const wsHandle = await loadWorkspaceHandle();
+        if (wsHandle != null) {
+          await writeWorkspaceTeams(wsHandle, sorted);
+        }
       } catch {
-        // best-effort OPFS background sync
+        // best-effort background sync
       }
     })();
     return true;
@@ -2607,6 +2674,10 @@ export function App() {
     }
     try {
       await deleteMatch(id);
+      const wsHandle = await loadWorkspaceHandle();
+      if (wsHandle != null) {
+        await deleteWorkspaceMatch(wsHandle, id);
+      }
     } catch (error) {
       console.warn("Match delete failed.", error);
       setStorageError("That match could not be deleted on this device.");
@@ -2625,8 +2696,12 @@ export function App() {
 
   async function importMatchFile(file: File): Promise<void> {
     try {
-      const snapshot = importMatchJson(await file.text());
+      const snapshot = importMatchJson(await file.text(), true);
       await putMatch(snapshot);
+      const wsHandle = await loadWorkspaceHandle();
+      if (wsHandle != null) {
+        await writeWorkspaceMatch(wsHandle, snapshot);
+      }
       setStorageError(null);
       await refreshMatches();
     } catch (error) {
@@ -2686,6 +2761,28 @@ export function App() {
     );
   }
 
+  async function handleLinkWorkspace(): Promise<void> {
+    const name = await linkWorkspaceFolder();
+    if (name != null) {
+      setWorkspaceName(name);
+      const wsHandle = await loadWorkspaceHandle();
+      if (wsHandle != null) {
+        // Auto-sync current data into newly linked workspace subfolders
+        const matches = await loadAllMatches();
+        await writeWorkspaceTeams(wsHandle, rosterLibrary);
+        for (const m of matches) {
+          await writeWorkspaceMatch(wsHandle, m);
+        }
+        await writeWorkspaceSystems(wsHandle, loadUserSystems());
+      }
+    }
+  }
+
+  async function handleUnlinkWorkspace(): Promise<void> {
+    await unlinkWorkspaceFolder();
+    setWorkspaceName(null);
+  }
+
   async function handleExportFullBackup(): Promise<void> {
     try {
       const json = await createFullBackupFromStorage(rosterLibrary, loadUserSystems());
@@ -2708,6 +2805,14 @@ export function App() {
         setRosterLibrary(sortTeams(durable));
       }
       setMatches(saved);
+      const wsHandle = await loadWorkspaceHandle();
+      if (wsHandle != null) {
+        await writeWorkspaceTeams(wsHandle, durable ?? rosterLibrary);
+        for (const m of backup.matches) {
+          await writeWorkspaceMatch(wsHandle, m);
+        }
+        await writeWorkspaceSystems(wsHandle, backup.userSystems);
+      }
       setStorageError(null);
       alert(`Restored ${result.matchCount} match(es), ${result.teamCount} team(s), and ${result.systemCount} custom system(s).`);
     } catch (error) {
@@ -2744,6 +2849,8 @@ export function App() {
         rosterCount={rosterLibrary.length}
         matchCount={matches.length}
         storageError={storageError}
+        workspaceName={workspaceName}
+        workspaceSupported={workspaceSupported}
         onResume={() => {
           if (autosave != null) {
             resetTransientInputs();
@@ -2758,6 +2865,8 @@ export function App() {
         onExportFullBackup={() => void handleExportFullBackup()}
         onImportFullBackup={(file) => void handleImportFullBackup(file)}
         onRestoreFromOpfs={() => void handleRestoreFromOpfs()}
+        onLinkWorkspace={() => void handleLinkWorkspace()}
+        onUnlinkWorkspace={() => void handleUnlinkWorkspace()}
       />
     );
   }

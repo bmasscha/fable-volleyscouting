@@ -168,6 +168,7 @@ export function loadAutosave(): MatchSnapshot | null {
 export function exportMatchJson(snapshot: MatchSnapshot): string {
   const payload = {
     version: 1,
+    id: snapshot.id,
     config: config_to_dict(snapshot.config),
     teams: {
       [HOME]: team_to_dict(snapshot.teams[HOME]),
@@ -186,7 +187,7 @@ export function exportMatchJson(snapshot: MatchSnapshot): string {
 /** Parse an exported match file (desktop or tablet origin) into a snapshot with
  * a fresh id -- importing never collides with or overwrites an existing match.
  * Throws on malformed input so the caller can show a banner. */
-export function importMatchJson(text: string): MatchSnapshot {
+export function importMatchJson(text: string, generateFreshId = true): MatchSnapshot {
   const data = JSON.parse(text) as Record<string, unknown>;
   if (data == null || typeof data !== "object") {
     throw new Error("not a match file");
@@ -199,7 +200,7 @@ export function importMatchJson(text: string): MatchSnapshot {
     throw new Error("match file is missing events");
   }
   return {
-    id: newMatchId(),
+    id: generateFreshId || typeof data.id !== "string" || data.id.trim() === "" ? newMatchId() : data.id,
     createdAt: typeof data.createdAt === "number" ? data.createdAt : Date.now(),
     config: config_from_dict((data.config as Record<string, unknown>) ?? {}),
     teams: {
