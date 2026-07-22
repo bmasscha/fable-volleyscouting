@@ -2783,6 +2783,7 @@ export function App() {
           await saveRosterLibraryIdb(sorted);
           saveRosterLibrary(sorted);
           setRosterLibrary(sorted);
+          setSetupDraft(makeMatchSetupDraft(sorted));
         }
         if (wsState.systems.length > 0) {
           saveUserSystems(wsState.systems);

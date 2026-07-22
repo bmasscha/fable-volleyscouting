@@ -22,6 +22,7 @@ import {
   matchExportFilename,
   teamExportFilename,
 } from "./browserStorage";
+import { importFullAppBackupJson } from "./backupStore";
 import { ROSTER_STORE, openDb, requestResult, txDone } from "./matchStore";
 import { FsDirectoryHandle } from "./rosterFileSync";
 
@@ -316,12 +317,98 @@ export async function readWorkspaceSystems(root: FsDirectoryHandle): Promise<Sys
   return systems;
 }
 
+async function collectJsonFileTexts(dir: FsDirectoryHandle): Promise<string[]> {
+  const texts: string[] = [];
+  try {
+    for await (const name of dir.keys()) {
+      if (name.toLowerCase().endsWith(".json") || name.toLowerCase().endsWith(".fable.json")) {
+        try {
+          const file = await (await dir.getFileHandle(name)).getFile();
+          texts.push(await file.text());
+        } catch {
+          // skip unreadable file
+        }
+      }
+    }
+  } catch {
+    // skip unreadable dir
+  }
+  return texts;
+}
+
 // ------------------------------------------------------------- Full Read
 export async function readFullWorkspaceState(root: FsDirectoryHandle): Promise<WorkspaceData> {
-  const [teams, matches, systems] = await Promise.all([
-    readWorkspaceTeams(root),
-    readWorkspaceMatches(root),
-    readWorkspaceSystems(root),
-  ]);
-  return { teams, matches, systems };
+  const rosterFolder = await getSubfolder(root, "rosters", false);
+  const matchFolder = await getSubfolder(root, "matches", false);
+  const systemFolder = await getSubfolder(root, "systems", false);
+
+  const sources: FsDirectoryHandle[] = [root];
+  if (rosterFolder != null) sources.push(rosterFolder);
+  if (matchFolder != null) sources.push(matchFolder);
+  if (systemFolder != null) sources.push(systemFolder);
+
+  const teamMap = new Map<string, Team>();
+  const matchMap = new Map<string, MatchSnapshot>();
+  const systemMap = new Map<string, SystemSpec>();
+
+  for (const source of sources) {
+    const fileTexts = await collectJsonFileTexts(source);
+    for (const text of fileTexts) {
+      // 1. Try full app backup package
+      try {
+        const fullBackup = importFullAppBackupJson(text);
+        if (fullBackup.matches.length > 0 || fullBackup.rosterLibrary.length > 0) {
+          for (const t of fullBackup.rosterLibrary) {
+            teamMap.set(t.name, t);
+          }
+          for (const m of fullBackup.matches) {
+            matchMap.set(m.id, m);
+          }
+          for (const s of fullBackup.userSystems) {
+            systemMap.set(s.id, s);
+          }
+          continue;
+        }
+      } catch {
+        // Not a full backup package
+      }
+
+      // 2. Try match snapshot
+      try {
+        const match = importMatchJson(text, false);
+        matchMap.set(match.id, match);
+        continue;
+      } catch {
+        // Not a match file
+      }
+
+      // 3. Try team roster file
+      try {
+        const teams = importTeamsFromJson(text);
+        for (const t of teams) {
+          teamMap.set(t.name, t);
+        }
+        continue;
+      } catch {
+        // Not a team file
+      }
+
+      // 4. Try custom system spec
+      try {
+        const sys = deserialize_system(JSON.parse(text));
+        if (sys.id != null && typeof sys.id === "string") {
+          systemMap.set(sys.id, sys);
+        }
+        continue;
+      } catch {
+        // Not a system spec
+      }
+    }
+  }
+
+  return {
+    teams: Array.from(teamMap.values()),
+    matches: Array.from(matchMap.values()),
+    systems: Array.from(systemMap.values()),
+  };
 }
