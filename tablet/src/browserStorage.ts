@@ -386,3 +386,12 @@ export function loadUserSystems(): SystemSpec[] {
     return [];
   }
 }
+
+/** File name for a full application backup export: "fable-tablet-backup-YYYY-MM-DD.fable.json". */
+export function fullBackupExportFilename(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const date = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return `fable-tablet-backup-${date}.fable.json`;
+}
+

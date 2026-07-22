@@ -41,6 +41,7 @@ import {
   teamExportFilename,
   rosterExportFilename,
   saveUserSystems,
+  fullBackupExportFilename,
 } from "./browserStorage";
 import {
   loadRosterLibraryIdb,
@@ -61,7 +62,15 @@ import {
   getMatch,
   listMatches,
   putMatch,
+  loadAllMatches,
 } from "./matchStore";
+import {
+  createFullBackupFromStorage,
+  importFullAppBackupJson,
+  restoreFullAppBackup,
+  autoSyncOpfsBackup,
+  tryRecoverFromOpfsIfEmpty,
+} from "./backupStore";
 import { VideoReview } from "./VideoReview";
 import {
   MatchSetupDraft,
@@ -475,6 +484,8 @@ interface StartupScreenProps {
   onSavedMatches: () => void;
   onManageTeams: () => void;
   onClearAutosave: () => void;
+  onExportFullBackup: () => void;
+  onImportFullBackup: (file: File) => void;
 }
 
 function StartupScreen({
@@ -487,7 +498,11 @@ function StartupScreen({
   onSavedMatches,
   onManageTeams,
   onClearAutosave,
+  onExportFullBackup,
+  onImportFullBackup,
 }: StartupScreenProps) {
+  const fullBackupInputRef = useRef<HTMLInputElement>(null);
+
   return (
     <main className="shell">
       <section className="startup-card">
@@ -497,6 +512,28 @@ function StartupScreen({
           {rosterCount} saved team(s) · {matchCount} saved match(es) on this device.
         </p>
         {storageError != null ? <div className="message-banner error">{storageError}</div> : null}
+
+        {rosterCount === 0 && matchCount === 0 ? (
+          <div className="message-banner info" style={{ marginTop: "1rem" }}>
+            <strong>No data found.</strong> If browser history was cleared, you can restore all games and teams from a backup file.
+          </div>
+        ) : null}
+
+        <input
+          ref={fullBackupInputRef}
+          type="file"
+          accept=".json,application/json"
+          style={{ display: "none" }}
+          onChange={(event) => {
+            const input = event.currentTarget as HTMLInputElement;
+            const file = input.files?.[0];
+            if (file != null) {
+              onImportFullBackup(file);
+            }
+            input.value = "";
+          }}
+        />
+
         {autosave != null ? (
           <>
             <div className="resume-summary">
@@ -538,6 +575,15 @@ function StartupScreen({
             </button>
           </div>
         )}
+
+        <div className="button-row compact" style={{ marginTop: "1.5rem", borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: "1rem" }}>
+          <button type="button" className="ghost" onClick={onExportFullBackup}>
+            Backup all data…
+          </button>
+          <button type="button" className="ghost" onClick={() => fullBackupInputRef.current?.click()}>
+            Restore backup…
+          </button>
+        </div>
       </section>
     </main>
   );
@@ -1674,39 +1720,38 @@ export function App() {
     setRosterLibrary(savedLibrary);
     setSetupDraft(makeMatchSetupDraft(savedLibrary));
 
-    // Load the durable archive and, on first launch after this feature ships,
-    // adopt any legacy live autosave so an in-progress match is not lost.
+    void requestPersistentStorage();
+
     (async () => {
       try {
         let saved = await listMatches();
+        let durableRosters = await loadRosterLibraryIdb();
+
+        // If local storage was cleared/empty, attempt OPFS auto-recovery
+        if (saved.length === 0 && (durableRosters == null || durableRosters.length === 0)) {
+          const recovered = await tryRecoverFromOpfsIfEmpty(saved.length, durableRosters?.length ?? 0);
+          if (recovered != null) {
+            saved = await listMatches();
+            durableRosters = await loadRosterLibraryIdb();
+          }
+        }
+
         if (saved.length === 0 && savedAutosave != null) {
           await putMatch(savedAutosave);
           saved = await listMatches();
         }
         setMatches(saved);
-      } catch (error) {
-        console.warn("Match archive is unavailable.", error);
-        setStorageError("Saved matches could not be loaded on this device.");
-      }
-    })();
 
-    // Ask the browser to keep this origin's storage from being auto-evicted,
-    // then reconcile the durable IndexedDB team library with the fast
-    // localStorage cache we already painted. IDB wins when present; otherwise
-    // migrate the localStorage copy into IDB (first launch after this ships).
-    void requestPersistentStorage();
-    (async () => {
-      try {
-        const durable = await loadRosterLibraryIdb();
-        if (durable != null) {
-          const sorted = sortTeams(durable);
+        if (durableRosters != null) {
+          const sorted = sortTeams(durableRosters);
           setRosterLibrary(sorted);
-          saveRosterLibrary(sorted); // keep the fast cache in step
+          saveRosterLibrary(sorted);
         } else {
           await saveRosterLibraryIdb(savedLibrary);
         }
       } catch (error) {
-        console.warn("Durable team library is unavailable.", error);
+        console.warn("Storage initialization failed.", error);
+        setStorageError("Saved data could not be loaded on this device.");
       }
     })();
   }, []);
@@ -1843,6 +1888,15 @@ export function App() {
       console.warn("Match archive write failed.", error);
       setStorageError("This match could not be saved to the archive on this device.");
     });
+    // Auto-sync OPFS backup layer
+    void (async () => {
+      try {
+        const allMatches = await loadAllMatches();
+        await autoSyncOpfsBackup(allMatches, rosterLibrary, loadUserSystems());
+      } catch {
+        // best-effort OPFS background sync
+      }
+    })();
   }
 
   function persistRosterLibrary(nextLibrary: Team[]): boolean {
@@ -1858,6 +1912,14 @@ export function App() {
     // block the in-browser save above.
     void saveRosterLibraryIdb(sorted);
     void syncTeamsToFolder(sorted);
+    void (async () => {
+      try {
+        const allMatches = await loadAllMatches();
+        await autoSyncOpfsBackup(allMatches, sorted, loadUserSystems());
+      } catch {
+        // best-effort OPFS background sync
+      }
+    })();
     return true;
   }
 
@@ -2600,6 +2662,36 @@ export function App() {
     );
   }
 
+  async function handleExportFullBackup(): Promise<void> {
+    try {
+      const json = await createFullBackupFromStorage(rosterLibrary, loadUserSystems());
+      downloadTextFile(fullBackupExportFilename(), json);
+      setStorageError(null);
+    } catch (error) {
+      console.warn("Full backup export failed.", error);
+      setStorageError("Failed to export full application backup.");
+    }
+  }
+
+  async function handleImportFullBackup(file: File): Promise<void> {
+    try {
+      const text = await file.text();
+      const backup = importFullAppBackupJson(text);
+      const result = await restoreFullAppBackup(backup);
+      const saved = await listMatches();
+      const durable = await loadRosterLibraryIdb();
+      if (durable != null) {
+        setRosterLibrary(sortTeams(durable));
+      }
+      setMatches(saved);
+      setStorageError(null);
+      alert(`Restored ${result.matchCount} match(es), ${result.teamCount} team(s), and ${result.systemCount} custom system(s).`);
+    } catch (error) {
+      console.warn("Full backup import failed.", error);
+      setStorageError(`Failed to restore backup: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   if (session == null) {
     return (
       <StartupScreen
@@ -2618,6 +2710,8 @@ export function App() {
         onSavedMatches={openSavedMatches}
         onManageTeams={openRosterLibrary}
         onClearAutosave={discardAutosave}
+        onExportFullBackup={() => void handleExportFullBackup()}
+        onImportFullBackup={(file) => void handleImportFullBackup(file)}
       />
     );
   }

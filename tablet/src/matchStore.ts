@@ -178,6 +178,41 @@ export async function deleteMatch(id: string): Promise<void> {
   await txDone(tx);
 }
 
+/** Load all full match snapshots from the archive. */
+export async function loadAllMatches(): Promise<MatchSnapshot[]> {
+  const db = await openDb();
+  const tx = db.transaction(STORE, "readonly");
+  const records = (await requestResult(tx.objectStore(STORE).getAll())) as MatchRecord[];
+  const matches: MatchSnapshot[] = [];
+  for (const record of records) {
+    try {
+      matches.push(fromStoredSnapshot(record.stored));
+    } catch {
+      // skip corrupt
+    }
+  }
+  return matches;
+}
+
+/** Insert or update a batch of matches. */
+export async function putMatches(snapshots: MatchSnapshot[]): Promise<void> {
+  if (snapshots.length === 0) {
+    return;
+  }
+  const db = await openDb();
+  const tx = db.transaction(STORE, "readwrite");
+  const store = tx.objectStore(STORE);
+  for (const snapshot of snapshots) {
+    const record: MatchRecord = {
+      id: snapshot.id,
+      meta: deriveMeta(snapshot),
+      stored: toStoredSnapshot(snapshot),
+    };
+    store.put(record);
+  }
+  await txDone(tx);
+}
+
 // ------------------------------------------------------------- video links
 //
 // The video-review route stores, per match, which video it is bound to and the
@@ -215,3 +250,35 @@ export async function getVideoLink(matchId: string): Promise<VideoLink | null> {
     return null;
   }
 }
+
+/** Load all stored video links keyed by match id. */
+export async function getAllVideoLinks(): Promise<Record<string, VideoLink>> {
+  const db = await openDb();
+  const tx = db.transaction(VIDEO_STORE, "readonly");
+  const records = (await requestResult(tx.objectStore(VIDEO_STORE).getAll())) as VideoLinkRecord[];
+  const result: Record<string, VideoLink> = {};
+  for (const record of records) {
+    try {
+      result[record.id] = video_link_from_dict(record.link);
+    } catch {
+      // skip unparseable
+    }
+  }
+  return result;
+}
+
+/** Save a batch of video links keyed by match id. */
+export async function saveVideoLinksBatch(links: Record<string, VideoLink>): Promise<void> {
+  const entries = Object.entries(links);
+  if (entries.length === 0) {
+    return;
+  }
+  const db = await openDb();
+  const tx = db.transaction(VIDEO_STORE, "readwrite");
+  const store = tx.objectStore(VIDEO_STORE);
+  for (const [id, link] of entries) {
+    store.put({ id, link: video_link_to_dict(link) });
+  }
+  await txDone(tx);
+}
+
