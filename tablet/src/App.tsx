@@ -507,6 +507,7 @@ interface StartupScreenProps {
   onRestoreFromOpfs: () => void;
   onLinkWorkspace: () => void;
   onUnlinkWorkspace: () => void;
+  onRescanWorkspace: () => void;
 }
 
 function StartupScreen({
@@ -526,6 +527,7 @@ function StartupScreen({
   onRestoreFromOpfs,
   onLinkWorkspace,
   onUnlinkWorkspace,
+  onRescanWorkspace,
 }: StartupScreenProps) {
   const fullBackupInputRef = useRef<HTMLInputElement>(null);
 
@@ -543,6 +545,9 @@ function StartupScreen({
           workspaceName != null ? (
             <div className="message-banner success" style={{ marginTop: "1rem" }}>
               Workspace: <strong>{workspaceName}</strong> (Linked ✓ — saves to disk subfolders)
+              <button type="button" className="ghost" onClick={onRescanWorkspace} style={{ marginLeft: "0.5rem" }}>
+                Re-scan Folder
+              </button>
               <button type="button" className="ghost" onClick={onUnlinkWorkspace} style={{ marginLeft: "0.5rem" }}>
                 Unlink
               </button>
@@ -2761,20 +2766,56 @@ export function App() {
     );
   }
 
+  async function handleRescanWorkspace(): Promise<void> {
+    const wsHandle = await loadWorkspaceHandle();
+    if (wsHandle == null) {
+      setStorageError("No workspace folder currently linked.");
+      return;
+    }
+    try {
+      const wsState = await readFullWorkspaceState(wsHandle);
+      if (wsState.matches.length > 0 || wsState.teams.length > 0 || wsState.systems.length > 0) {
+        if (wsState.matches.length > 0) {
+          await putMatches(wsState.matches);
+        }
+        if (wsState.teams.length > 0) {
+          const sorted = sortTeams(wsState.teams);
+          await saveRosterLibraryIdb(sorted);
+          saveRosterLibrary(sorted);
+          setRosterLibrary(sorted);
+        }
+        if (wsState.systems.length > 0) {
+          saveUserSystems(wsState.systems);
+        }
+        const savedMatches = await listMatches();
+        setMatches(savedMatches);
+        setStorageError(null);
+        alert(`Loaded ${wsState.matches.length} match(es), ${wsState.teams.length} team(s), and ${wsState.systems.length} custom system(s) from your workspace folder!`);
+      } else {
+        // Workspace folder is fresh -- sync in-memory teams & matches into it
+        const matches = await loadAllMatches();
+        if (rosterLibrary.length > 0) {
+          await writeWorkspaceTeams(wsHandle, rosterLibrary);
+        }
+        for (const m of matches) {
+          await writeWorkspaceMatch(wsHandle, m);
+        }
+        const sys = loadUserSystems();
+        if (sys.length > 0) {
+          await writeWorkspaceSystems(wsHandle, sys);
+        }
+      }
+    } catch (error) {
+      console.warn("Workspace rescan error.", error);
+      setStorageError("Could not scan workspace folder. Permission re-grant may be required.");
+    }
+  }
+
   async function handleLinkWorkspace(): Promise<void> {
     const name = await linkWorkspaceFolder();
     if (name != null) {
       setWorkspaceName(name);
-      const wsHandle = await loadWorkspaceHandle();
-      if (wsHandle != null) {
-        // Auto-sync current data into newly linked workspace subfolders
-        const matches = await loadAllMatches();
-        await writeWorkspaceTeams(wsHandle, rosterLibrary);
-        for (const m of matches) {
-          await writeWorkspaceMatch(wsHandle, m);
-        }
-        await writeWorkspaceSystems(wsHandle, loadUserSystems());
-      }
+      await handleRescanWorkspace();
     }
   }
 
@@ -2867,6 +2908,7 @@ export function App() {
         onRestoreFromOpfs={() => void handleRestoreFromOpfs()}
         onLinkWorkspace={() => void handleLinkWorkspace()}
         onUnlinkWorkspace={() => void handleUnlinkWorkspace()}
+        onRescanWorkspace={() => void handleRescanWorkspace()}
       />
     );
   }

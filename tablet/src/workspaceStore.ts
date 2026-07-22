@@ -149,6 +149,9 @@ export async function getSubfolder(root: FsDirectoryHandle, name: string, create
 
 // ------------------------------------------------------------- Rosters Sync
 export async function writeWorkspaceTeams(root: FsDirectoryHandle, teams: Team[]): Promise<boolean> {
+  if (teams.length === 0) {
+    return true; // Safety guard: do not clear disk files if in-memory list is empty
+  }
   if (!(await ensureWritePermission(root))) {
     return false;
   }
