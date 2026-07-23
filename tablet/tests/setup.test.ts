@@ -50,14 +50,14 @@ describe("match setup draft", () => {
   test("designates the liberos of the team a dropped selection falls back to", () => {
     const library = createSeedRosterLibrary();
     const draft = makeMatchSetupDraft(library);
-    expect(draft.liberos[HOME]).toEqual(["home-07"]);
+    expect(draft.liberos[HOME]).toEqual(["home-07", "home-12"]);
 
     // "Home" is gone from the library, so the draft resolves to another team
     const withoutHome = library.filter((team) => team.name !== "Home");
     const rebuilt = makeMatchSetupDraft(withoutHome, draft);
 
     expect(rebuilt.homeTeamName).toBe("Away");
-    expect(rebuilt.liberos[HOME]).toEqual(["away-07"]);
+    expect(rebuilt.liberos[HOME]).toEqual(["away-07", "away-12"]);
   });
 });
 

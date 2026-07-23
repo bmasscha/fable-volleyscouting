@@ -55,6 +55,30 @@
    "number": 9,
    "name": "Ines Verlinden",
    "role": "setter"
+  },
+  {
+   "id": "50dadcd2dbab402cb05076fe7fc30856",
+   "number": 10,
+   "name": "Outside Hitter 3",
+   "role": "outside"
+  },
+  {
+   "id": "1775a6ffdd0b478695f7d629dac1c493",
+   "number": 11,
+   "name": "Middle 3",
+   "role": "middle"
+  },
+  {
+   "id": "f35ca695f9154450aba9c6c7162e5ecd",
+   "number": 12,
+   "name": "Opposite 2",
+   "role": "opposite"
+  },
+  {
+   "id": "72dace3841ad414ea46811df4c6c41c0",
+   "number": 13,
+   "name": "Libero 2",
+   "role": "libero"
   }
  ]
 }

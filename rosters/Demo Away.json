@@ -61,6 +61,24 @@
    "number": 12,
    "name": "Tess De Smedt",
    "role": "universal"
+  },
+  {
+   "id": "12372b1d9fb5407bb19489ce9043d2a3",
+   "number": 7,
+   "name": "Middle 3",
+   "role": "middle"
+  },
+  {
+   "id": "acb8cd41607e42198bc5373782f8ae9b",
+   "number": 8,
+   "name": "Opposite 2",
+   "role": "opposite"
+  },
+  {
+   "id": "101c7d9183bb4c6191f888d80545c26c",
+   "number": 13,
+   "name": "Libero 2",
+   "role": "libero"
   }
  ]
 }

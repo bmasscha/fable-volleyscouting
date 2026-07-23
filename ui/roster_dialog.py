@@ -36,6 +36,26 @@ QHeaderView::section { min-height: 40px; }
 _ROLE_ORDER = [Role.SETTER, Role.OUTSIDE, Role.OPPOSITE,
                Role.MIDDLE, Role.LIBERO, Role.UNIVERSAL]
 
+_STANDARD_ROSTER = [
+    ("Setter", Role.SETTER),
+    ("Outside Hitter 1", Role.OUTSIDE),
+    ("Middle 2", Role.MIDDLE),
+    ("Opposite", Role.OPPOSITE),
+    ("Outside Hitter 2", Role.OUTSIDE),
+    ("Middle 1", Role.MIDDLE),
+    ("Libero 1", Role.LIBERO),
+    ("Middle 3", Role.MIDDLE),
+    ("Setter 2", Role.SETTER),
+    ("Opposite 2", Role.OPPOSITE),
+    ("Outside Hitter 3", Role.OUTSIDE),
+    ("Libero 2", Role.LIBERO),
+]
+
+
+def _make_standard_roster() -> list[Player]:
+    return [Player(number=i, name=name, role=role)
+            for i, (name, role) in enumerate(_STANDARD_ROSTER, start=1)]
+
 
 class RosterDialog(QDialog):
     """Editor for the saved-team library (rosters/ folder)."""
@@ -353,7 +373,7 @@ class RosterDialog(QDialog):
         while name.lower() in existing:
             name = f"{base} {n}"
             n += 1
-        team = Team(name=name)
+        team = Team(name=name, players=_make_standard_roster())
         save_team(team)
         item = QListWidgetItem(team.name)
         item.setData(Qt.ItemDataRole.UserRole, team)

@@ -33,6 +33,21 @@ export const ROLE_ORDER: readonly Role[] = [
   Role.UNIVERSAL,
 ] as const;
 
+const STANDARD_ROSTER: readonly { name: string; role: Role }[] = [
+  { name: "Setter", role: Role.SETTER },
+  { name: "Outside Hitter 1", role: Role.OUTSIDE },
+  { name: "Middle 2", role: Role.MIDDLE },
+  { name: "Opposite", role: Role.OPPOSITE },
+  { name: "Outside Hitter 2", role: Role.OUTSIDE },
+  { name: "Middle 1", role: Role.MIDDLE },
+  { name: "Libero 1", role: Role.LIBERO },
+  { name: "Middle 3", role: Role.MIDDLE },
+  { name: "Setter 2", role: Role.SETTER },
+  { name: "Opposite 2", role: Role.OPPOSITE },
+  { name: "Outside Hitter 3", role: Role.OUTSIDE },
+  { name: "Libero 2", role: Role.LIBERO },
+] as const;
+
 export interface MatchSetupDraft {
   homeTeamName: string;
   awayTeamName: string;
@@ -79,16 +94,12 @@ export function cloneTeam(team: Team): Team {
 }
 
 function makeDefaultPlayers(prefix: string, numberOffset: number, idPrefix: string): Player[] {
-  return [
-    make_player(numberOffset + 1, `${prefix} Setter`, Role.SETTER, `${idPrefix}-01`),
-    make_player(numberOffset + 2, `${prefix} Outside 1`, Role.OUTSIDE, `${idPrefix}-02`),
-    make_player(numberOffset + 3, `${prefix} Middle 1`, Role.MIDDLE, `${idPrefix}-03`),
-    make_player(numberOffset + 4, `${prefix} Opposite`, Role.OPPOSITE, `${idPrefix}-04`),
-    make_player(numberOffset + 5, `${prefix} Outside 2`, Role.OUTSIDE, `${idPrefix}-05`),
-    make_player(numberOffset + 6, `${prefix} Middle 2`, Role.MIDDLE, `${idPrefix}-06`),
-    make_player(numberOffset + 7, `${prefix} Libero`, Role.LIBERO, `${idPrefix}-07`),
-    make_player(numberOffset + 8, `${prefix} Utility`, Role.UNIVERSAL, `${idPrefix}-08`),
-  ];
+  return STANDARD_ROSTER.map((slot, index) => make_player(
+    numberOffset + index + 1,
+    `${prefix} ${slot.name}`,
+    slot.role,
+    `${idPrefix}-${String(index + 1).padStart(2, "0")}`,
+  ));
 }
 
 export function createSeedRosterLibrary(): Team[] {
@@ -113,7 +124,8 @@ export function createNewTeam(existingTeams: Team[]): Team {
     name = `${base} ${counter}`;
     counter += 1;
   }
-  return make_team(name, [], "#2e7d32");
+  const players = STANDARD_ROSTER.map((slot, index) => make_player(index + 1, slot.name, slot.role));
+  return make_team(name, players, "#2e7d32");
 }
 
 export function addDraftPlayer(team: Team): Team {
