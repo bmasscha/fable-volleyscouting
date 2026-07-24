@@ -66,6 +66,18 @@ function fmtTime(seconds: number | null): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
+function cap(s: string): string {
+  return s.length === 0 ? s : s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** The player performing the action, e.g. "Middle 2"; falls back to the name
+ * (or a bare number) when the role is unknown. */
+function playerLabel(a: Action): string {
+  const num = a.player_number != null ? String(a.player_number) : "?";
+  if (a.role) return `${cap(a.role)} ${num}`;
+  return a.player_name || `#${num}`;
+}
+
 interface VideoReviewProps {
   match: MatchSnapshot;
   onBack: () => void;
@@ -496,15 +508,15 @@ export function VideoReview({ match, onBack }: VideoReviewProps) {
             <ul className="match-list">
               {filtered.map((a) => {
                 const vt = event_to_video_time(link, a.ts);
-                const teamName = match.teams[a.team_key]?.name ?? a.team_key;
                 return (
                   <li
                     key={a.index}
                     className={`vr-clip-row${a.index === selectedIndex ? " selected" : ""}`}
                     onClick={() => onClipTap(a)}
                   >
-                    <span>S{a.set_number} · {teamName} #{a.player_number ?? "?"} {a.player_name}</span>
-                    <span className="muted">{a.skill} {a.rating} · {vt == null ? "unsynced" : `@ ${fmtTime(vt)}`}</span>
+                    <span className="vr-clip-when">{vt == null ? "unsynced" : `@ ${fmtTime(vt)}`}</span>
+                    <span>· {playerLabel(a)} ·</span>
+                    <span className="muted">{cap(a.skill)} {a.rating}</span>
                   </li>
                 );
               })}

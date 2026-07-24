@@ -92,7 +92,11 @@ def test_anchor_maps_action_to_video_time_in_label(app, tmp_path):
     win.refresh_clip_list()
     attack = next(a for a in win._filtered if a.rating == Rating.PERFECT)
     label = win._clip_label(attack)
+    # single line: "@ 0:20  ·  <player>  ·  Attack <rating>"
     assert "@ 0:20" in label   # 20 s -> 0:20
+    assert "·" in label
+    assert "Attack" in label   # skill capitalized, no leading "S1"
+    assert "S1" not in label
 
 
 def test_clip_window_spins_update_and_persist_link(app, tmp_path):

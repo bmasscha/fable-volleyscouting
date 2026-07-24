@@ -393,14 +393,9 @@ class VideoReviewWindow(QMainWindow):
         self.status_label.setText(f"{len(self._filtered)} matching action(s)")
 
     def _clip_label(self, a: Action) -> str:
-        team = (self._teams.get(a.team_key).name if self._teams.get(a.team_key)
-                else a.team_key)
-        num = f"#{a.player_number}" if a.player_number is not None else "?"
-        skill = getattr(a.skill, "value", a.skill)
-        rating = getattr(a.rating, "symbol", a.rating)
         vt = event_to_video_time(self._link, a.ts)
-        when = f"  @ {_fmt_time(vt)}" if vt is not None else "  (unsynced)"
-        return f"S{a.set_number} R{a.rally_index}  {team} {num} {a.player_name}  {skill} {rating}{when}"
+        when = f"@ {_fmt_time(vt)}" if vt is not None else "unsynced"
+        return f"{when}  ·  {_player_label(a)}  ·  {_skill_label(a)}"
 
     def _selected_action(self) -> Action | None:
         items = self.clip_list.selectedItems()
@@ -581,6 +576,22 @@ class VideoReviewWindow(QMainWindow):
 
     def _info(self, text: str) -> None:
         QMessageBox.information(self, "Video review", text)
+
+
+def _player_label(a: Action) -> str:
+    """The player performing the action, e.g. "Middle 2". Falls back to the
+    name (or a bare number) when the role is unknown."""
+    num = str(a.player_number) if a.player_number is not None else "?"
+    if a.role is not None:
+        return f"{a.role.value.capitalize()} {num}"
+    return a.player_name or f"#{num}"
+
+
+def _skill_label(a: Action) -> str:
+    """The action and its rating, e.g. "Attack +"."""
+    skill = getattr(a.skill, "value", str(a.skill)).capitalize()
+    rating = getattr(a.rating, "symbol", a.rating)
+    return f"{skill} {rating}"
 
 
 def _fmt_time(seconds: float | None) -> str:

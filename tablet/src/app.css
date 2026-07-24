@@ -330,12 +330,19 @@ select {
 }
 
 .vr-clip-row {
-  display: grid;
-  gap: 0.15rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem;
   padding: 0.6rem 0.7rem;
   border-radius: 10px;
   background: #10202a;
   cursor: pointer;
+}
+
+.vr-clip-when {
+  font-variant-numeric: tabular-nums;
+  color: #cfe3ec;
 }
 
 .vr-clip-row.selected {
