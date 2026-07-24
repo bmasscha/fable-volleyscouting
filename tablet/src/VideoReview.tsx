@@ -105,6 +105,10 @@ export function VideoReview({ match, onBack }: VideoReviewProps) {
   const ytPlayerRef = useRef<YTPlayer | null>(null);
   const clipEndRef = useRef<number | null>(null);
   const queueRef = useRef<number[]>([]);
+  // Always points at the latest playAction so the clip-end interval never
+  // chains through a stale closure (which captured an anchor-less link and
+  // silently stopped after the first clip).
+  const playActionRef = useRef<(a: Action) => void>(() => {});
 
   // Load any stored link (anchors + source) for this match.
   useEffect(() => {
@@ -183,7 +187,9 @@ export function VideoReview({ match, onBack }: VideoReviewProps) {
     };
   }, [link.source_kind, ytReady]);
 
-  // Stop each clip at its end; chain the queue for "Play all".
+  // Stop each clip at its end; chain the queue for "Play all". State is read
+  // through refs (player/actions/playAction) so the interval always sees the
+  // latest link and never chains through a stale closure.
   useEffect(() => {
     const id = window.setInterval(() => {
       const end = clipEndRef.current;
@@ -195,13 +201,11 @@ export function VideoReview({ match, onBack }: VideoReviewProps) {
         const nextIndex = queueRef.current.shift();
         if (nextIndex != null) {
           const nextAction = actions.find((a) => a.index === nextIndex);
-          if (nextAction != null) playAction(nextAction);
+          if (nextAction != null) playActionRef.current(nextAction);
         }
       }
     }, 120);
     return () => window.clearInterval(id);
-    // playAction is stable enough for this interval; player captured via ref reads
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [player, actions]);
 
   const spec: ActionFilter = {
@@ -253,6 +257,7 @@ export function VideoReview({ match, onBack }: VideoReviewProps) {
     p.seek(start);
     p.play();
   }
+  playActionRef.current = playAction;
 
   function onClipTap(a: Action): void {
     setSelectedIndex(a.index);

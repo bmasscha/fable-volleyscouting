@@ -121,6 +121,56 @@ def test_clip_window_spins_update_and_persist_link(app, tmp_path):
     assert win2.after_spin.value() == 8.0
 
 
+class _FakePlayer:
+    """Minimal PlayerController stand-in whose clock we drive by hand."""
+    def __init__(self):
+        self._t = 0.0
+        self.seeks = []
+    def widget(self):
+        return None
+    def load(self, ref):
+        pass
+    def play(self):
+        pass
+    def pause(self):
+        pass
+    def seek(self, seconds):
+        self._t = seconds
+        self.seeks.append(seconds)
+    def current_time(self):
+        return self._t
+    def set_rate(self, rate):
+        pass
+
+
+def test_play_all_advances_through_every_clip(app, tmp_path):
+    path, _ = _write_match(tmp_path)
+    win = VideoReviewWindow()
+    win.open_match_path(path)
+    win._link.source_kind = FILE
+    win._link.source_ref = "m.mp4"
+    win._link.anchors.append(Anchor(event_ts=1000.0, video_seconds=0.0))
+    win._player = _FakePlayer()
+    win.refresh_clip_list()
+    n = len(win._filtered)
+    assert n >= 3
+
+    win.play_all()
+    assert win._clip_end is not None
+    assert len(win._play_queue) == n - 1
+
+    # Each tick with the clock pushed past the clip end should retire one clip
+    # and start the next, until the whole queue drains.
+    for _ in range(n * 3):
+        if win._clip_end is None:
+            break
+        win._player._t = win._clip_end + 0.1
+        win._tick()
+
+    assert win._play_queue == []
+    assert len(win._player.seeks) == n  # every filtered action was played
+
+
 def test_youtube_rejects_bad_url_without_building_player(app, tmp_path):
     path, _ = _write_match(tmp_path)
     win = VideoReviewWindow()
