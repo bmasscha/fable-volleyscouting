@@ -1,5 +1,6 @@
 """Offscreen tests for the desktop video-review window: match loading, filter
 -> clip list, anchor-based mapping, and a real ffmpeg clip export."""
+import json
 import os
 import subprocess
 
@@ -15,7 +16,7 @@ from core.events import (AttackEvent, DigEvent, ReceptionEvent,  # noqa: E402
 from core.models import AWAY, HOME, MatchConfig, Rating          # noqa: E402
 from core.persistence import save_match           # noqa: E402
 from core.video_export import ffmpeg_exe          # noqa: E402
-from core.video_sync import FILE, Anchor          # noqa: E402
+from core.video_sync import FILE, Anchor, VideoLink  # noqa: E402
 from ui.video_review import VideoReviewWindow, sidecar_path      # noqa: E402
 
 from .test_engine import make_teams, set_start_event  # noqa: E402
@@ -92,6 +93,28 @@ def test_anchor_maps_action_to_video_time_in_label(app, tmp_path):
     attack = next(a for a in win._filtered if a.rating == Rating.PERFECT)
     label = win._clip_label(attack)
     assert "@ 0:20" in label   # 20 s -> 0:20
+
+
+def test_clip_window_spins_update_and_persist_link(app, tmp_path):
+    path, _ = _write_match(tmp_path)
+    win = VideoReviewWindow()
+    win.open_match_path(path)
+    # defaults reflected on the spin boxes
+    assert win.before_spin.value() == win._link.pre_roll
+    assert win.after_spin.value() == win._link.post_roll
+    # editing the spins updates the link (used by play/export) and saves it
+    win.before_spin.setValue(3.5)
+    win.after_spin.setValue(8.0)
+    assert win._link.pre_roll == 3.5
+    assert win._link.post_roll == 8.0
+    reloaded = VideoLink.from_dict(json.loads(sidecar_path(path).read_text("utf-8")))
+    assert reloaded.pre_roll == 3.5
+    assert reloaded.post_roll == 8.0
+    # a reopened window shows the saved window, not the defaults
+    win2 = VideoReviewWindow()
+    win2.open_match_path(path)
+    assert win2.before_spin.value() == 3.5
+    assert win2.after_spin.value() == 8.0
 
 
 def test_youtube_rejects_bad_url_without_building_player(app, tmp_path):

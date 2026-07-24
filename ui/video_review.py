@@ -13,10 +13,10 @@ from pathlib import Path
 from PyQt6.QtCore import QObject, Qt, QTimer, QUrl
 from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PyQt6.QtMultimediaWidgets import QVideoWidget
-from PyQt6.QtWidgets import (QComboBox, QFileDialog, QHBoxLayout, QInputDialog,
-                             QLabel, QListWidget, QListWidgetItem, QMainWindow,
-                             QMessageBox, QPushButton, QStackedWidget,
-                             QVBoxLayout, QWidget)
+from PyQt6.QtWidgets import (QComboBox, QDoubleSpinBox, QFileDialog,
+                             QHBoxLayout, QInputDialog, QLabel, QListWidget,
+                             QListWidgetItem, QMainWindow, QMessageBox,
+                             QPushButton, QStackedWidget, QVBoxLayout, QWidget)
 
 from core.models import AWAY, HOME, Rating, Role, Skill
 from core.persistence import load_match
@@ -216,6 +216,14 @@ class VideoReviewWindow(QMainWindow):
         self.speed_combo.setCurrentText("1x")
         self.speed_combo.currentTextChanged.connect(self._on_speed)
         transport.addWidget(self.speed_combo)
+        transport.addWidget(QLabel("Before"))
+        self.before_spin = self._clip_spin(self._link.pre_roll)
+        transport.addWidget(self.before_spin)
+        transport.addWidget(QLabel("After"))
+        self.after_spin = self._clip_spin(self._link.post_roll)
+        transport.addWidget(self.after_spin)
+        for spin in (self.before_spin, self.after_spin):
+            spin.valueChanged.connect(self._on_clip_window_changed)
         self.status_label = QLabel("")
         transport.addWidget(self.status_label, 1)
         center.addLayout(transport)
@@ -253,6 +261,32 @@ class VideoReviewWindow(QMainWindow):
         b.clicked.connect(slot)
         return b
 
+    def _clip_spin(self, value: float) -> QDoubleSpinBox:
+        spin = QDoubleSpinBox()
+        spin.setRange(0.0, 60.0)
+        spin.setSingleStep(0.5)
+        spin.setDecimals(1)
+        spin.setSuffix(" s")
+        spin.setValue(value)
+        return spin
+
+    def _on_clip_window_changed(self) -> None:
+        """The user edited the before/after seconds: store them on the link
+        (so play and export both use them) and persist."""
+        self._link.pre_roll = self.before_spin.value()
+        self._link.post_roll = self.after_spin.value()
+        self._save_link()
+        self.refresh_clip_list()
+
+    def _sync_clip_spins(self) -> None:
+        """Reflect the loaded link's window onto the spin boxes without
+        triggering a save."""
+        for spin, value in ((self.before_spin, self._link.pre_roll),
+                            (self.after_spin, self._link.post_roll)):
+            spin.blockSignals(True)
+            spin.setValue(value)
+            spin.blockSignals(False)
+
     # ---- match / video loading ------------------------------------------
 
     def open_match_path(self, path: str | Path) -> None:
@@ -270,6 +304,7 @@ class VideoReviewWindow(QMainWindow):
                 self._load_link_source()
             except (OSError, ValueError, KeyError):
                 self._link = VideoLink()
+        self._sync_clip_spins()
         self.refresh_clip_list()
         self._update_sync_label()
 

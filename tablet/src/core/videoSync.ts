@@ -4,7 +4,7 @@
  * The user pins them with one or more *anchors* -- (event_ts, video_seconds)
  * pairs set by seeking the video to a known action. From those this module maps
  * any event timestamp to a video position and turns a matched action into a
- * fixed 2 s-before / 5 s-after clip window.
+ * clip window -- 2 s-before / 5 s-after by default, adjustable per link.
  *
  * Mirrors core/video_sync.py (see TRANSLATION.md). */
 

@@ -301,6 +301,13 @@ export function VideoReview({ match, onBack }: VideoReviewProps) {
     persist({ ...link, anchors: link.anchors.filter((_, idx) => idx !== i) });
   }
 
+  // Clamp an edited seconds value to a sane [0, 60] range.
+  function clampSeconds(raw: string): number {
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < 0) return 0;
+    return Math.min(60, n);
+  }
+
   const selectedAction = selectedIndex == null ? null : actions.find((x) => x.index === selectedIndex) ?? null;
   const hasSource = Boolean(link.source_ref) && (link.source_kind !== FILE || objectUrl != null);
   const canSync = hasSource && selectedAction != null && (link.source_kind !== YOUTUBE || ytReady);
@@ -426,6 +433,34 @@ export function VideoReview({ match, onBack }: VideoReviewProps) {
               {link.source_kind === YOUTUBE && Boolean(link.source_ref) && !ytReady ? (
                 <p className="muted">Video loading…</p>
               ) : null}
+              <div className="vr-clip-window">
+                <label>Before
+                  <input
+                    type="number"
+                    min={0}
+                    max={60}
+                    step={0.5}
+                    value={link.pre_roll}
+                    onChange={(e) =>
+                      persist({ ...link, pre_roll: clampSeconds((e.currentTarget as HTMLInputElement).value) })
+                    }
+                  />
+                  s
+                </label>
+                <label>After
+                  <input
+                    type="number"
+                    min={0}
+                    max={60}
+                    step={0.5}
+                    value={link.post_roll}
+                    onChange={(e) =>
+                      persist({ ...link, post_roll: clampSeconds((e.currentTarget as HTMLInputElement).value) })
+                    }
+                  />
+                  s
+                </label>
+              </div>
             </div>
 
             <div className="vr-anchors">

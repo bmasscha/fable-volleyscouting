@@ -271,6 +271,22 @@ select {
   overflow-wrap: anywhere;
 }
 
+.vr-clip-window {
+  display: flex;
+  gap: 0.8rem;
+  align-items: center;
+}
+
+.vr-clip-window label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.vr-clip-window input[type="number"] {
+  width: 4rem;
+}
+
 .vr-yt-open {
   display: inline-flex;
   align-items: center;

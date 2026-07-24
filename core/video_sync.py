@@ -4,7 +4,7 @@ Events carry a wall-clock unix `ts`; a video has its own 0-based timeline. The
 user pins the two together with one or more *anchors* -- each an (event_ts,
 video_seconds) pair set by seeking the video to a known action. From those this
 module maps any event timestamp to a video position, and turns a matched action
-into a fixed 2 s-before / 5 s-after clip window.
+into a clip window -- 2 s-before / 5 s-after by default, adjustable per link.
 
 Pure Python, no Qt. Mirrored to tablet/src/core/videoSync.ts (TRANSLATION.md).
 """
