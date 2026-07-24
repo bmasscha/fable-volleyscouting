@@ -24,7 +24,7 @@ import {
 } from "./browserStorage";
 import { importFullAppBackupJson } from "./backupStore";
 import { ROSTER_STORE, openDb, requestResult, txDone } from "./matchStore";
-import { FsDirectoryHandle } from "./rosterFileSync";
+import { FsDirectoryHandle } from "./fsAccess";
 
 const WORKSPACE_HANDLE_ID = "workspace-root-handle";
 
@@ -116,7 +116,7 @@ export async function unlinkWorkspaceFolder(): Promise<void> {
 //
 // When a background write finds permission is no longer granted it does not
 // prompt (there is no user gesture to attach a prompt to). Instead it records a
-// "flush pending" flag: the data is already safe in IndexedDB/OPFS, and the UI
+// "flush pending" flag: the data is already safe in IndexedDB, and the UI
 // surfaces a Reconnect action so the user can re-grant with one tap and flush
 // everything back to the folder — so nothing is lost even if browsing data is
 // later cleared.

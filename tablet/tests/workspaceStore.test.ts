@@ -13,7 +13,7 @@ import {
   writeWorkspaceMatch,
   writeWorkspaceTeams,
 } from "../src/workspaceStore";
-import { FsDirectoryHandle } from "../src/rosterFileSync";
+import { FsDirectoryHandle } from "../src/fsAccess";
 
 function createMockDirectory(): { handle: FsDirectoryHandle; files: Map<string, string> } {
   const files = new Map<string, string>();

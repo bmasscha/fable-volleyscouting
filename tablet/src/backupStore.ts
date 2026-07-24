@@ -1,8 +1,10 @@
 // Unified full-application backup and restoration engine.
 //
 // Combines saved matches, team rosters, custom user systems, and video links
-// into a portable `.fable.json` backup package. Allows instant 1-click export
-// and import, and powers auto-backup sync to OPFS.
+// into a portable `.fable.json` backup package for one-tap share/export and
+// file import. Durable on-disk persistence lives in the workspace folder
+// engine (workspaceStore.ts); this module only produces/consumes the portable
+// backup file used to move data between devices or into a fresh install.
 
 import { Team, team_from_dict, team_to_dict } from "./core/models";
 import { SystemSpec } from "./core/systems";
@@ -26,7 +28,6 @@ import {
   saveVideoLinksBatch,
 } from "./matchStore";
 import { saveRosterLibraryIdb } from "./rosterStore";
-import { saveOpfsBackup, loadOpfsBackup } from "./opfsStore";
 
 export interface FullAppBackup {
   version: 1;
@@ -146,7 +147,7 @@ export function importFullAppBackupJson(jsonText: string): FullAppBackup {
   };
 }
 
-/** Restore a full backup into IndexedDB, localStorage, and OPFS. */
+/** Restore a full backup into IndexedDB and localStorage. */
 export async function restoreFullAppBackup(
   backup: FullAppBackup,
 ): Promise<{ matchCount: number; teamCount: number; systemCount: number }> {
@@ -171,15 +172,6 @@ export async function restoreFullAppBackup(
     await saveVideoLinksBatch(backup.videoLinks);
   }
 
-  // 5. Update OPFS backup
-  const jsonText = exportFullAppBackupJson(
-    backup.matches,
-    backup.rosterLibrary,
-    backup.userSystems,
-    backup.videoLinks,
-  );
-  await saveOpfsBackup(jsonText);
-
   return {
     matchCount: backup.matches.length,
     teamCount: backup.rosterLibrary.length,
@@ -187,52 +179,7 @@ export async function restoreFullAppBackup(
   };
 }
 
-/** Create and trigger OPFS backup sync with current full state. */
-export async function autoSyncOpfsBackup(
-  matches: MatchSnapshot[],
-  rosterLibrary: Team[],
-  userSystems: SystemSpec[],
-  videoLinks?: Record<string, VideoLink>,
-): Promise<boolean> {
-  try {
-    const links = videoLinks ?? (await getAllVideoLinks());
-    const jsonText = exportFullAppBackupJson(matches, rosterLibrary, userSystems, links);
-    return await saveOpfsBackup(jsonText);
-  } catch (error) {
-    console.warn("OPFS auto-sync backup failed.", error);
-    return false;
-  }
-}
-
-/** Attempt to recover data from OPFS backup if IndexedDB/localStorage is empty.
- * Returns the restored backup or null if no OPFS backup or recovery unnecessary. */
-export async function tryRecoverFromOpfsIfEmpty(
-  currentMatchesCount: number,
-  currentTeamsCount: number,
-): Promise<FullAppBackup | null> {
-  // Only attempt recovery if local storage appears wiped / empty
-  if (currentMatchesCount > 0 && currentTeamsCount > 0) {
-    return null;
-  }
-
-  const opfsText = await loadOpfsBackup();
-  if (opfsText == null) {
-    return null;
-  }
-
-  try {
-    const backup = importFullAppBackupJson(opfsText);
-    if (backup.matches.length > 0 || backup.rosterLibrary.length > 0) {
-      await restoreFullAppBackup(backup);
-      return backup;
-    }
-  } catch (error) {
-    console.warn("OPFS auto-recovery failed to restore backup.", error);
-  }
-  return null;
-}
-
-/** Build full backup payload directly from storage for immediate download. */
+/** Build full backup payload directly from storage for immediate share/export. */
 export async function createFullBackupFromStorage(
   currentRosters: Team[],
   currentUserSystems: SystemSpec[],
@@ -240,46 +187,5 @@ export async function createFullBackupFromStorage(
   const matches = await loadAllMatches();
   const videoLinks = await getAllVideoLinks();
   return exportFullAppBackupJson(matches, currentRosters, currentUserSystems, videoLinks);
-}
-
-/** Manually restore full state from OPFS virtual backup file.
- * Returns match/team counts or null if OPFS backup is missing or invalid. */
-export async function restoreFromOpfs(): Promise<{ matchCount: number; teamCount: number; systemCount: number } | null> {
-  const opfsText = await loadOpfsBackup();
-  if (opfsText == null) {
-    return null;
-  }
-  try {
-    const backup = importFullAppBackupJson(opfsText);
-    return await restoreFullAppBackup(backup);
-  } catch (error) {
-    console.warn("OPFS manual restore failed.", error);
-    return null;
-  }
-}
-
-
-/** Create and trigger OPFS backup sync with current full state, explicitly ensuring
- * the active live session match snapshot is included regardless of transaction timing. */
-export async function autoSyncOpfsBackupWithSession(
-  activeSession: MatchSnapshot | null,
-  rosterLibrary: Team[],
-  userSystems: SystemSpec[],
-): Promise<boolean> {
-  try {
-    const archived = await loadAllMatches();
-    const map = new Map<string, MatchSnapshot>();
-    for (const m of archived) {
-      map.set(m.id, m);
-    }
-    if (activeSession != null) {
-      map.set(activeSession.id, activeSession);
-    }
-    const allMatches = Array.from(map.values());
-    return await autoSyncOpfsBackup(allMatches, rosterLibrary, userSystems);
-  } catch (error) {
-    console.warn("OPFS session auto-sync failed.", error);
-    return false;
-  }
 }
 

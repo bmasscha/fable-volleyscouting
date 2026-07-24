@@ -6,7 +6,6 @@ import {
   exportFullAppBackupJson,
   importFullAppBackupJson,
   restoreFullAppBackup,
-  tryRecoverFromOpfsIfEmpty,
 } from "../src/backupStore";
 import { default_config, make_player, make_team } from "../src/core/models";
 import { openDb, loadAllMatches } from "../src/matchStore";
@@ -128,10 +127,5 @@ describe("full application backup and restore", () => {
     const rosters = await loadRosterLibraryIdb();
     expect(rosters?.length).toBe(1);
     expect(rosters?.[0].name).toBe("Durable Team");
-  });
-
-  test("tryRecoverFromOpfsIfEmpty returns null when data exists", async () => {
-    const recovered = await tryRecoverFromOpfsIfEmpty(1, 1);
-    expect(recovered).toBeNull();
   });
 });

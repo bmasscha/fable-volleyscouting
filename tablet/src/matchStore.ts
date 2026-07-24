@@ -26,8 +26,8 @@ const DB_NAME = "fable-scouter";
 const DB_VERSION = 3;
 const STORE = "matches";
 const VIDEO_STORE = "videoLinks";
-/** Roster library + linked-folder handle. Shared with rosterStore.ts /
- * rosterFileSync.ts, which open the same DB via the exported openDb(). */
+/** Roster library + workspace-folder handle. Shared with rosterStore.ts /
+ * workspaceStore.ts, which open the same DB via the exported openDb(). */
 export const ROSTER_STORE = "rosters";
 
 /** Lightweight listing row -- everything the Saved-matches screen needs

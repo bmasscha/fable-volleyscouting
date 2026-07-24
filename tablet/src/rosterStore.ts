@@ -5,8 +5,8 @@
 // "fable-scouter" IndexedDB the match archive uses. IndexedDB has a far larger
 // quota than localStorage and, together with navigator.storage.persist(),
 // resists automatic eviction under storage pressure. (Neither survives a manual
-// "clear browsing data" -- that is what the linked folder / exported files are
-// for; see rosterFileSync.ts.)
+// "clear browsing data" -- that is what the workspace folder / exported backup
+// files are for; see workspaceStore.ts.)
 
 import { Team, team_from_dict, team_to_dict } from "./core/models";
 import { ROSTER_STORE, openDb, requestResult, txDone } from "./matchStore";

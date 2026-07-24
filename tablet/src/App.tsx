@@ -25,7 +25,6 @@ import {
 import {
   MatchSnapshot,
   clearAutosave,
-  downloadTextFile,
   exportMatchJson,
   importMatchJson,
   loadAutosave,
@@ -35,11 +34,7 @@ import {
   newMatchId,
   saveAutosave,
   saveRosterLibrary,
-  exportRosterLibraryJson,
   importTeamsFromJson,
-  exportTeamJson,
-  teamExportFilename,
-  rosterExportFilename,
   saveUserSystems,
   fullBackupExportFilename,
   shareTextFile,
@@ -49,14 +44,6 @@ import {
   saveRosterLibraryIdb,
   requestPersistentStorage,
 } from "./rosterStore";
-import {
-  isFolderSyncSupported,
-  linkedFolderName,
-  linkRosterFolder,
-  unlinkRosterFolder,
-  importTeamsFromLinkedFolder,
-  syncTeamsToFolder,
-} from "./rosterFileSync";
 import {
   MatchMeta,
   deleteMatch,
@@ -70,10 +57,6 @@ import {
   createFullBackupFromStorage,
   importFullAppBackupJson,
   restoreFullAppBackup,
-  restoreFromOpfs,
-  autoSyncOpfsBackup,
-  autoSyncOpfsBackupWithSession,
-  tryRecoverFromOpfsIfEmpty,
 } from "./backupStore";
 import {
   clearWorkspaceFlushPending,
@@ -91,7 +74,7 @@ import {
   writeWorkspaceSystems,
   writeWorkspaceTeams,
 } from "./workspaceStore";
-import { FsDirectoryHandle } from "./rosterFileSync";
+import { FsDirectoryHandle } from "./fsAccess";
 import { VideoReview } from "./VideoReview";
 import {
   MatchSetupDraft,
@@ -510,7 +493,6 @@ interface StartupScreenProps {
   onClearAutosave: () => void;
   onExportFullBackup: () => void;
   onImportFullBackup: (file: File) => void;
-  onRestoreFromOpfs: () => void;
   onLinkWorkspace: () => void;
   onUnlinkWorkspace: () => void;
   onRescanWorkspace: () => void;
@@ -532,7 +514,6 @@ function StartupScreen({
   onClearAutosave,
   onExportFullBackup,
   onImportFullBackup,
-  onRestoreFromOpfs,
   onLinkWorkspace,
   onUnlinkWorkspace,
   onRescanWorkspace,
@@ -577,8 +558,10 @@ function StartupScreen({
               </div>
             )
           ) : (
-            <div className="message-banner info" style={{ marginTop: "1rem" }}>
-              <strong>Set Data Workspace Location:</strong> Pick a folder on your tablet or Google Drive to store teams, matches, and custom systems natively as files.
+            <div className="message-banner warning" style={{ marginTop: "1rem" }}>
+              <strong>Set your workspace folder to protect your data.</strong> Until you do, teams and
+              matches live only in this browser and are lost if its data is cleared. Pick a folder on
+              your tablet or Google Drive to store everything as files that survive a clear.
               <div style={{ marginTop: "0.5rem" }}>
                 <button type="button" className="primary" onClick={onLinkWorkspace}>
                   Set Workspace Folder…
@@ -590,7 +573,8 @@ function StartupScreen({
 
         {rosterCount === 0 && matchCount === 0 && workspaceName == null ? (
           <div className="message-banner info" style={{ marginTop: "1rem" }}>
-            <strong>No data found.</strong> If browser history was cleared, you can restore all games and teams from OPFS or a backup file.
+            <strong>No data found.</strong> If browser data was cleared, restore all games and teams
+            from a backup file below, or re-link the workspace folder you saved them to.
           </div>
         ) : null}
 
@@ -653,10 +637,7 @@ function StartupScreen({
 
         <div className="button-row compact" style={{ marginTop: "1.5rem", borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: "1rem" }}>
           <button type="button" className="ghost" onClick={onExportFullBackup}>
-            Backup all data…
-          </button>
-          <button type="button" className="ghost" onClick={onRestoreFromOpfs}>
-            Restore from OPFS
+            Share backup…
           </button>
           <button type="button" className="ghost" onClick={() => fullBackupInputRef.current?.click()}>
             Restore backup file…
@@ -678,13 +659,6 @@ function RosterLibraryScreen({ library, onSaveLibrary, onBack }: RosterLibrarySc
   const [draftTeam, setDraftTeam] = useState<Team | null>(library[0] != null ? cloneTeam(library[0]) : null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // File System Access API folder sync (desktop Chrome/Edge only).
-  const folderSupported = isFolderSyncSupported();
-  const [folderName, setFolderName] = useState<string | null>(null);
-
-  useEffect(() => {
-    void linkedFolderName().then(setFolderName);
-  }, []);
 
   const selectedTeam = useMemo(
     () => library.find((team) => team.name === selectedTeamName) ?? null,
@@ -835,18 +809,6 @@ function RosterLibraryScreen({ library, onSaveLibrary, onBack }: RosterLibrarySc
     return merged;
   }
 
-  function exportLibrary(): void {
-    const json = exportRosterLibraryJson(library);
-    downloadTextFile(rosterExportFilename(), json);
-  }
-
-  function exportTeam(): void {
-    if (selectedTeam == null) {
-      return;
-    }
-    downloadTextFile(teamExportFilename(selectedTeam), exportTeamJson(selectedTeam));
-  }
-
   // Accepts several files at once and either shape: a tablet roster bundle or a
   // desktop single-team rosters/*.json file. Every file is merged by name.
   function importLibrary(event: Event): void {
@@ -882,68 +844,15 @@ function RosterLibraryScreen({ library, onSaveLibrary, onBack }: RosterLibrarySc
       });
   }
 
-  // Link a real folder (a PC's desktop rosters/ folder): pull in any team files
-  // already there, then persist -- which writes the whole library back out and
-  // keeps auto-saving to it on every later change.
-  function linkFolder(): void {
-    void (async () => {
-      const name = await linkRosterFolder();
-      if (name == null) {
-        return;
-      }
-      setFolderName(name);
-      let merged = library;
-      try {
-        const found = await importTeamsFromLinkedFolder();
-        if (found.length > 0) {
-          merged = mergeTeams(library, found);
-        }
-      } catch {
-        // A folder we cannot read still becomes the write target below.
-      }
-      if (persist(merged)) {
-        setMessage(`Linked "${name}". Teams now auto-save to that folder as files.`);
-        setError(null);
-      }
-    })();
-  }
-
-  function unlinkFolder(): void {
-    void (async () => {
-      await unlinkRosterFolder();
-      setFolderName(null);
-      setMessage("Folder unlinked. The files already written were left in place.");
-      setError(null);
-    })();
-  }
-
   return (
     <main className="shell">
       <section className="editor-shell">
         <div className="screen-header">
           <div>
             <h1>Team library</h1>
-            {folderName != null ? (
-              <p className="muted">Auto-saving to folder "{folderName}" (survives clearing browser data).</p>
-            ) : (
-              <p className="muted">Saved in this browser. Export or link a folder to keep a copy off-device.</p>
-            )}
+            <p className="muted">Teams are saved to your workspace folder as files. Import to pull in rosters from the desktop app or another device.</p>
           </div>
           <div className="button-row compact">
-            {folderSupported ? (
-              folderName != null ? (
-                <button type="button" onClick={unlinkFolder}>
-                  Unlink folder
-                </button>
-              ) : (
-                <button type="button" onClick={linkFolder}>
-                  Link folder
-                </button>
-              )
-            ) : null}
-            <button type="button" onClick={exportLibrary}>
-              Export
-            </button>
             <label className="button">
               Import
               <input
@@ -999,9 +908,6 @@ function RosterLibraryScreen({ library, onSaveLibrary, onBack }: RosterLibrarySc
                     <p className="muted">{dirty ? "Unsaved changes" : "Saved"}</p>
                   </div>
                   <div className="button-row compact">
-                    <button type="button" onClick={exportTeam}>
-                      Export team
-                    </button>
                     <button type="button" onClick={deleteTeam}>
                       Delete
                     </button>
@@ -1146,7 +1052,6 @@ interface SavedMatchesScreenProps {
   onExport: (id: string) => void;
   onDelete: (id: string) => void;
   onImport: (file: File) => void;
-  onExportFullBackup: () => void;
   onBack: () => void;
 }
 
@@ -1158,7 +1063,6 @@ function SavedMatchesScreen({
   onExport,
   onDelete,
   onImport,
-  onExportFullBackup,
   onBack,
 }: SavedMatchesScreenProps) {
   const importInput = useRef<HTMLInputElement>(null);
@@ -1168,9 +1072,6 @@ function SavedMatchesScreen({
         <div className="library-header">
           <h1>Saved matches</h1>
           <div className="button-row">
-            <button type="button" onClick={onExportFullBackup}>
-              Backup all data…
-            </button>
             <button type="button" onClick={() => importInput.current?.click()}>
               Import match…
             </button>
@@ -1846,15 +1747,6 @@ export function App() {
         let saved = await listMatches();
         let durableRosters = await loadRosterLibraryIdb();
 
-        // If local storage was cleared/empty, attempt OPFS auto-recovery
-        if (saved.length === 0 && (durableRosters == null || durableRosters.length === 0)) {
-          const recovered = await tryRecoverFromOpfsIfEmpty(saved.length, durableRosters?.length ?? 0);
-          if (recovered != null) {
-            saved = await listMatches();
-            durableRosters = await loadRosterLibraryIdb();
-          }
-        }
-
         if (saved.length === 0 && savedAutosave != null) {
           await putMatch(savedAutosave);
           saved = await listMatches();
@@ -2026,16 +1918,15 @@ export function App() {
     } else {
       setStorageError(null);
     }
-    // Await putMatch FIRST so IndexedDB is guaranteed updated before OPFS & Workspace sync run,
-    // and explicitly pass nextSession to autoSyncOpfsBackupWithSession and writeWorkspaceMatch.
+    // Await putMatch FIRST so IndexedDB is guaranteed updated before the
+    // workspace-folder write runs.
     void (async () => {
       try {
         await putMatch(nextSession);
-        await autoSyncOpfsBackupWithSession(nextSession, rosterLibrary, loadUserSystems());
         // Log every action to the workspace folder. Uses the already-granted
         // handle and only *queries* permission, so scouting never triggers a
         // permission dialog. If access has lapsed the write is skipped (data is
-        // already in IndexedDB/OPFS) and the Reconnect control is surfaced.
+        // already in IndexedDB) and the Reconnect control is surfaced.
         const wsHandle = workspaceHandleRef.current;
         if (wsHandle != null) {
           const ok = await writeWorkspaceMatch(wsHandle, nextSession);
@@ -2044,7 +1935,7 @@ export function App() {
           }
         }
       } catch (error) {
-        console.warn("Match archive write / OPFS auto-sync / workspace sync failed.", error);
+        console.warn("Match archive write / workspace sync failed.", error);
         setStorageError("This match could not be saved to the archive on this device.");
       }
     })();
@@ -2062,14 +1953,11 @@ export function App() {
     }
     setStorageError(null);
     setRosterLibrary(sorted);
-    // Durable copies, fire-and-forget: IndexedDB, desktop folder sync, OPFS backup, and root Workspace folder.
+    // Durable copies, fire-and-forget: IndexedDB and the root Workspace folder.
     // This runs only on an explicit library save, so teams reach disk only when actually changed.
     void saveRosterLibraryIdb(sorted);
-    void syncTeamsToFolder(sorted);
     void (async () => {
       try {
-        const allMatches = await loadAllMatches();
-        await autoSyncOpfsBackup(allMatches, sorted, loadUserSystems());
         const wsHandle = workspaceHandleRef.current;
         if (wsHandle != null) {
           const ok = await writeWorkspaceTeams(wsHandle, sorted, removedTeams);
@@ -2810,7 +2698,6 @@ export function App() {
         onExport={(id) => void exportStoredMatch(id)}
         onDelete={(id) => void deleteStoredMatch(id)}
         onImport={(file) => void importMatchFile(file)}
-        onExportFullBackup={() => void handleExportFullBackup()}
         onBack={() => setScreen(session == null ? "startup" : "match")}
       />
     );
@@ -2996,27 +2883,6 @@ export function App() {
     }
   }
 
-  async function handleRestoreFromOpfs(): Promise<void> {
-    try {
-      const result = await restoreFromOpfs();
-      if (result == null) {
-        setStorageError("No OPFS backup file found on this browser.");
-        return;
-      }
-      const saved = await listMatches();
-      const durable = await loadRosterLibraryIdb();
-      if (durable != null) {
-        setRosterLibrary(sortTeams(durable));
-      }
-      setMatches(saved);
-      setStorageError(null);
-      alert(`Restored ${result.matchCount} match(es), ${result.teamCount} team(s), and ${result.systemCount} custom system(s) from OPFS virtual storage.`);
-    } catch (error) {
-      console.warn("OPFS restore error.", error);
-      setStorageError("Failed to restore from OPFS storage.");
-    }
-  }
-
   if (session == null) {
     return (
       <StartupScreen
@@ -3041,7 +2907,6 @@ export function App() {
         onClearAutosave={discardAutosave}
         onExportFullBackup={() => void handleExportFullBackup()}
         onImportFullBackup={(file) => void handleImportFullBackup(file)}
-        onRestoreFromOpfs={() => void handleRestoreFromOpfs()}
         onLinkWorkspace={() => void handleLinkWorkspace()}
         onUnlinkWorkspace={() => void handleUnlinkWorkspace()}
         onRescanWorkspace={() => void handleRescanWorkspace()}
@@ -3338,14 +3203,15 @@ export function App() {
               <article className="control-card">
                 <h2>Storage & Backups</h2>
                 <p className="muted">
-                  Live data is saved automatically on every event to IndexedDB and OPFS virtual storage.
+                  Live data is saved automatically on every event to this device and, when a
+                  workspace folder is linked, to disk as files.
                 </p>
                 <div className="button-row compact">
                   <button type="button" onClick={() => void exportActiveMatch()}>
                     Export match file…
                   </button>
                   <button type="button" onClick={() => void handleExportFullBackup()}>
-                    Backup all data…
+                    Share backup…
                   </button>
                 </div>
               </article>
