@@ -1,0 +1,56 @@
+[
+  {
+    "video_timestamp": "10:13",
+    "video_seconds": 613.0,
+    "clip_timestamp": "00:13",
+    "serving_team": "FRA",
+    "server": "35",
+    "confidence": 1.0,
+    "reasoning": "Referee whistle then toss and overhand hit from behind baseline by #35."
+  },
+  {
+    "video_timestamp": "11:10",
+    "video_seconds": 670.0,
+    "clip_timestamp": "01:10",
+    "serving_team": "USA",
+    "server": "8",
+    "confidence": 1.0,
+    "reasoning": "Referee whistle then toss and overhand hit from behind baseline by #8."
+  },
+  {
+    "video_timestamp": "11:48",
+    "video_seconds": 708.0,
+    "clip_timestamp": "01:48",
+    "serving_team": "FRA",
+    "server": "1",
+    "confidence": 1.0,
+    "reasoning": "Referee whistle then toss and overhand hit from behind baseline by #1."
+  },
+  {
+    "video_timestamp": "12:42",
+    "video_seconds": 762.0,
+    "clip_timestamp": "02:42",
+    "serving_team": "USA",
+    "server": "22",
+    "confidence": 1.0,
+    "reasoning": "Referee whistle then toss and overhand hit from behind baseline by #22."
+  },
+  {
+    "video_timestamp": "13:23",
+    "video_seconds": 803.0,
+    "clip_timestamp": "03:23",
+    "serving_team": "FRA",
+    "server": "1",
+    "confidence": 1.0,
+    "reasoning": "Referee whistle then toss and overhand hit from behind baseline by #1."
+  },
+  {
+    "video_timestamp": "14:58",
+    "video_seconds": 898.0,
+    "clip_timestamp": "04:58",
+    "serving_team": "USA",
+    "server": "8",
+    "confidence": 1.0,
+    "reasoning": "Referee whistle then toss and overhand hit from behind baseline by #8."
+  }
+]

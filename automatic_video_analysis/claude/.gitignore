@@ -1,0 +1,17 @@
+# virtualenv & caches
+.venv/
+.pytest_cache/
+__pycache__/
+*.pyc
+
+# downloaded video working copies (large)
+media/
+
+# generated clips & rendered charts
+clips_*/
+spikes_check/
+traj_out/
+results/
+
+# ad-hoc CLI outputs
+serves.json
