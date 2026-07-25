@@ -1,0 +1,13 @@
+# Virtualenv, caches & python artifacts
+.venv/
+.pytest_cache/
+__pycache__/
+*.pyc
+
+# Generated outputs (video clips, frames, json analysis logs)
+output/
+
+# Sample/test video files (large binaries)
+data/*.mp4
+media/
+*.mp4
