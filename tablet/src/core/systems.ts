@@ -283,3 +283,39 @@ export function acting_setter_slot_for(
   }
   return acting_setter_slot(roles);
 }
+
+/** The lineup slots (0..5) held by this system's `count` setters, the
+ * acting one FIRST.
+ *
+ * Display-only: nothing here is stored, and the engine never asks. It
+ * exists so a UI showing one rotation can mark every setter of a
+ * multi-setter system, not just the one running this rally -- a coach
+ * authoring a 6-2 must see both setters at a glance.
+ *
+ * `acting_slot === null` means no setter is identifiable (roles not
+ * entered, or an ambiguous lineup); the UI must never invent one, so the
+ * answer is the empty list rather than a guess.
+ *
+ * Setters are spread evenly around the rotation, so a count only spreads
+ * when it divides the six slots (1, 2, 3, 6): the step is `6 / count`.
+ * Any other count (0, 4, 5, or a nonsense value typed into an editor)
+ * has no even spread, so it degrades to just the acting setter rather
+ * than inventing positions. count=2 gives the acting setter and its
+ * diagonal (3 apart -- the 6-2 rule `acting_setter_slot` in
+ * core/formations.ts already relies on); count=3 gives acting, +2, +4
+ * (a 6-3).
+ */
+export function setter_slots(acting_slot: number | null, count: number): number[] {
+  if (acting_slot === null) {
+    return [];
+  }
+  if (count <= 1 || 6 % count !== 0) {
+    return [acting_slot];
+  }
+  const step = 6 / count;
+  const slots: number[] = [];
+  for (let i = 0; i < count; i += 1) {
+    slots.push((acting_slot + i * step) % 6);
+  }
+  return slots;
+}

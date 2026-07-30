@@ -22,8 +22,10 @@ systems, the single constant 0 for keyless ones (which instead carry a
 is the rotational fallback and is not editable here.
 
 The id field IS the save target: Save is a unified save / save-as /
-overwrite-your-own-copy that is only enabled for a regex-valid,
-non-built-in id (built-ins can never be shadowed). ``systems_changed``
+overwrite-your-own-copy that is enabled for any regex-valid id. A
+built-in id is still never written (built-ins can never be shadowed) --
+saving on top of one stores a copy under ``_copy_id_for``'s free id and
+says so, rather than leaving a dead button and lost edits. ``systems_changed``
 lets the main window rebuild its per-team menus once a system is saved
 or deleted. A ``systems_base`` constructor kwarg (default = the real
 ``systems_dir``) is threaded through every persistence call so tests can
@@ -45,12 +47,12 @@ from core import user_systems
 from core.formations import Mode, _OFFSET_CATEGORY, overlap_violations
 from core.rotation import serve_xy
 from core.systems import (DEFAULT_SYSTEM, SYSTEMS, SystemSpec, get_system,
-                          system_ids)
+                          setter_slots, system_ids)
 from core.user_systems import BUILTIN_IDS, systems_dir
 
 from .court_view import (COURT_COLOR, FREE_ZONE_COLOR, FRONT_ZONE_COLOR,
                          LINE_PEN, M, NET_PEN)
-from .player_token import SETTER_COLOR, TOKEN_RADIUS
+from .player_token import SETTER_ALT_COLOR, SETTER_COLOR, TOKEN_RADIUS
 
 # Neutral team colour for the non-setting tokens (matches the app's
 # default token green in ui/player_token.py).
@@ -66,6 +68,24 @@ Y_MIN, Y_MAX = -2.5, 11.5
 # accepts or rejects the id on save; duplicated here only to drive the
 # Save button's enabled state live as the user types.
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$")
+
+
+
+def _copy_id_for(desired: str) -> str:
+    """A free, regex-valid id for a copy of ``desired``: ``<desired>-copy``,
+    then ``-copy-2``, ``-copy-3``, ... skipping every id already in the
+    registry (built-ins and the coach's own systems). The stem is
+    truncated so the result can never exceed the 32-character id limit."""
+    used = set(system_ids()) | set(BUILTIN_IDS)
+    stem = desired.strip()
+    n = 1
+    while True:
+        suffix = "-copy" if n == 1 else f"-copy-{n}"
+        candidate = stem[:32 - len(suffix)] + suffix
+        if candidate not in used:
+            return candidate
+        n += 1
+
 
 # Situation tabs in display order -> chart mode. GRID is never edited.
 _TAB_MODES = [Mode.RECEIVE, Mode.SERVE_BASE, Mode.OFFENSE, Mode.DEFENSE]
@@ -245,8 +265,13 @@ class SystemEditorWindow(QMainWindow):
         meta.addWidget(self._desc_edit, 2)
         meta.addWidget(QLabel("Expected setters:"))
         self._expected_spin = QSpinBox()
-        self._expected_spin.setRange(0, 2)
+        self._expected_spin.setRange(0, 3)     # 3 so a 6-3 can be authored
         self._expected_spin.setMaximumWidth(60)
+        # The setter count is a live display concern (it decides how many
+        # tokens are painted blue), so re-pose on every change. _load_base
+        # blocks this signal while it sets the value and re-poses itself,
+        # so loading a base still poses exactly once.
+        self._expected_spin.valueChanged.connect(lambda _v: self._repose())
         meta.addWidget(self._expected_spin)
         root.addLayout(meta)
 
@@ -386,10 +411,31 @@ class SystemEditorWindow(QMainWindow):
         return (self._current_key if self._uses_setter_roles
                 else self._fixed_setter_slot)
 
-    def _role_hint(self, slot: int) -> str:
-        if self._uses_setter_roles:
-            return _OFFSET_CATEGORY[(slot - self._current_key) % 6]
-        return "sets" if slot == self._fixed_setter_slot else ""
+    def _setter_slots(self) -> list[int]:
+        """Every slot held by a setter of the system being authored, the
+        acting one first -- so a coach writing a 6-2 or a 6-3 can see the
+        whole setter pair/trio on court, not just the one running this
+        rally. The count comes from the Expected setters spin box, which
+        is what the coach is declaring the system to be. A keyless system
+        has no setter role at all, so it passes count 0 and keeps painting
+        exactly its single fixed setting slot."""
+        count = self._expected_spin.value() if self._uses_setter_roles else 0
+        return setter_slots(self._acting_setter_slot(), count)
+
+    def _role_hint(self, slot: int, setters: list[int] | None = None) -> str:
+        """Caption under a token. Setter-keyed systems label a slot by its
+        offset role from the acting setter -- except the system's own
+        setters, which all read "S": a 6-2's second setter stands in the
+        opposite's slot and would otherwise be captioned "OPP". ``setters``
+        is handed in by ``_repose`` so the list is built once per repose
+        instead of once per token."""
+        if not self._uses_setter_roles:
+            return "sets" if slot == self._fixed_setter_slot else ""
+        if setters is None:
+            setters = self._setter_slots()
+        if slot in setters:
+            return "S"
+        return _OFFSET_CATEGORY[(slot - self._current_key) % 6]
 
     def _repose(self) -> None:
         """Re-pose every token from the working chart of the current
@@ -397,7 +443,8 @@ class SystemEditorWindow(QMainWindow):
         must not feed back into the live drag handler."""
         mode = self._current_mode()
         chart = self._working[mode][self._current_key]
-        acting = self._acting_setter_slot()
+        setters = self._setter_slots()          # acting setter first
+        acting = setters[0] if setters else None
         self._suspend_feedback = True
         for slot, tok in self._tokens.items():
             if mode is Mode.SERVE_BASE and slot == 0:
@@ -411,8 +458,13 @@ class SystemEditorWindow(QMainWindow):
                 tok.setPos(x * M, y * M)
                 tok.set_movable(True)
                 tok.ghost = False
-                tok.hint = self._role_hint(slot)
-            tok.color = QColor(SETTER_COLOR if slot == acting else TEAM_GREEN)
+                tok.hint = self._role_hint(slot, setters)
+            if slot == acting:
+                tok.color = QColor(SETTER_COLOR)
+            elif slot in setters:
+                tok.color = QColor(SETTER_ALT_COLOR)
+            else:
+                tok.color = QColor(TEAM_GREEN)
             tok.warn = False
             tok.update()
         self._suspend_feedback = False
@@ -514,9 +566,11 @@ class SystemEditorWindow(QMainWindow):
 
     # -------------------------------------------------------- save / delete
 
-    def _build_spec(self, sid: str) -> SystemSpec:
+    def _build_spec(self, sid: str, label: str | None = None) -> SystemSpec:
         """A SystemSpec from the working state, coordinates snapped to the
-        0.1 m grid so the on-disk file is clean and byte-stable."""
+        0.1 m grid so the on-disk file is clean and byte-stable. ``label``
+        overrides the label field (a copy of a built-in is renamed so the
+        two never show up under the same name in the base picker)."""
         charts = {
             mode: {key: {slot: (round(x, 1), round(y, 1))
                          for slot, (x, y) in chart.items()}
@@ -524,7 +578,7 @@ class SystemEditorWindow(QMainWindow):
             for mode in _STORED_MODES}
         return SystemSpec(
             id=sid,
-            label=self._label_edit.text().strip() or sid,
+            label=label or self._label_edit.text().strip() or sid,
             description=self._desc_edit.text().strip(),
             uses_setter_roles=self._uses_setter_roles,
             expected_setters=self._expected_spin.value(),
@@ -539,9 +593,10 @@ class SystemEditorWindow(QMainWindow):
     def _update_button_states(self) -> None:
         sid = self._id_edit.text().strip()
         valid = bool(_ID_RE.match(sid))
-        self._save_btn.setEnabled(valid and sid not in BUILTIN_IDS)
+        self._save_btn.setEnabled(valid)
         if sid in BUILTIN_IDS:
-            self._id_hint.setText("change the id to save your own copy")
+            self._id_hint.setText(
+                "built-in system -- Save keeps your changes as a copy")
         elif sid and not valid:
             self._id_hint.setText(
                 "id must start alphanumeric, then letters/digits/-/_ (max 32)")
@@ -551,17 +606,39 @@ class SystemEditorWindow(QMainWindow):
 
     def _on_save(self) -> None:
         sid = self._id_edit.text().strip()
+        # Built-in ids are immutable everywhere (save_user_system, the
+        # loader and the tablet's import filter all refuse them), so a save
+        # on top of one is redirected to a free copy id instead of being
+        # refused -- the coach never loses the edits they just made. Saving
+        # over one of their OWN systems is the update flow and just happens.
+        over_builtin = sid in BUILTIN_IDS
+        target = _copy_id_for(sid) if over_builtin else sid
+        replaced = self._is_existing_user_system(target)
+        # A copy that kept the built-in's label would be indistinguishable
+        # from it in the base picker; a label the coach typed is kept as is.
+        label = self._label_edit.text().strip()
+        if over_builtin and label == SYSTEMS[sid].label:
+            nth = re.search(r"-copy-(\d+)$", target)
+            label += " (copy)" if nth is None else f" (copy {nth.group(1)})"
         try:
             path = user_systems.save_user_system(
-                self._build_spec(sid), base=self._systems_base)
-        except ValueError as e:                   # built-in / malformed id
+                self._build_spec(target, label), base=self._systems_base)
+        except ValueError as e:                   # malformed id
             QMessageBox.warning(self, "Save system", str(e))
             return
         user_systems.refresh_registry(self._systems_base)
-        self._refresh_base_combo(select=sid)
+        self._refresh_base_combo(select=target)
         self.systems_changed.emit()
-        self.statusBar().showMessage(
-            f"saved {path.parent.name}\\{path.name}")
+        if over_builtin:
+            self.statusBar().showMessage(
+                f"'{sid}' is built-in and cannot be changed -- saved your "
+                f"version as '{target}'")
+        elif replaced:
+            self.statusBar().showMessage(
+                f"updated {target} -- the stored system was replaced")
+        else:
+            self.statusBar().showMessage(
+                f"saved {path.parent.name}\\{path.name}")
         self._update_button_states()
 
     def _on_delete(self) -> None:

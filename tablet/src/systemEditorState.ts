@@ -14,15 +14,19 @@
  * (x in [-13, 0], y in [-2.5, 11.5]) and snapped to the 0.1 m grid the
  * built-in charts are authored on, so a ``serialize_system`` of the
  * working state always passes validation. The id field IS the save
- * target: ``canSave`` is only true for a regex-valid, non-built-in id
- * (built-ins can never be shadowed). The SystemEditor component drives
- * this module and turns its results into a saved user system.
+ * target: ``canSave`` is true for any regex-valid id. A built-in id is
+ * still never written (built-ins can never be shadowed) -- saving on top
+ * of one stores a copy under ``copyIdFor``'s free id instead of blocking
+ * the Save button. The SystemEditor component drives this module and
+ * turns its results into a saved user system.
  */
 import {
   Mode, _OFFSET_CATEGORY, overlap_violations,
 } from "./core/formations";
 import { serve_xy } from "./core/rotation";
-import { Chart, Charts, SYSTEMS, SystemSpec, get_system } from "./core/systems";
+import {
+  Chart, Charts, SYSTEMS, SystemSpec, get_system, setter_slots,
+} from "./core/systems";
 import { BUILTIN_IDS } from "./core/user_systems";
 
 // Modes that carry a stored chart (GRID is the fallback, never stored).
@@ -190,18 +194,35 @@ export function buildSpec(state: EditorState): SystemSpec {
   };
 }
 
-/** Save is enabled only for a regex-valid id that is not a built-in
- * (built-ins can never be shadowed). */
+/** Save is enabled for any regex-valid id. A built-in id is allowed
+ * through here on purpose: the editor redirects such a save to a copy
+ * (``copyIdFor``) rather than leaving the scouter with a dead button and
+ * no way to keep the work they just did. */
 export function canSave(state: EditorState): boolean {
-  const sid = state.id.trim();
-  return _ID_RE.test(sid) && !BUILTIN_IDS.has(sid);
+  return _ID_RE.test(state.id.trim());
+}
+
+/** A free, regex-valid id for a copy of ``desired``: ``<desired>-copy``,
+ * then ``-copy-2``, ``-copy-3``, ... skipping every id in ``taken`` and
+ * every built-in. The stem is truncated so the result can never exceed
+ * the 32-character id limit. */
+export function copyIdFor(desired: string, taken: Iterable<string>): string {
+  const used = new Set<string>([...BUILTIN_IDS, ...taken]);
+  const stem = desired.trim();
+  for (let n = 1; ; n += 1) {
+    const suffix = n === 1 ? "-copy" : `-copy-${n}`;
+    const candidate = stem.slice(0, 32 - suffix.length) + suffix;
+    if (!used.has(candidate)) {
+      return candidate;
+    }
+  }
 }
 
 /** The hint line under the id field: mirrors the desktop's wording. */
 export function saveHint(state: EditorState): string {
   const sid = state.id.trim();
   if (BUILTIN_IDS.has(sid)) {
-    return "change the id to save your own copy";
+    return "built-in system — Save keeps your changes as a copy";
   }
   if (sid && !_ID_RE.test(sid)) {
     return "id must start alphanumeric, then letters/digits/-/_ (max 32)";
@@ -215,10 +236,34 @@ export function actingSetterSlot(state: EditorState, key: number): number {
   return state.uses_setter_roles ? key : state.fixed_setter_slot;
 }
 
+/** Every slot this working system's setters hold, acting one first --
+ * what the editor paints blue so a two-setter system shows BOTH setters
+ * while only one rotation is on screen.
+ *
+ * The count comes from the live ``expected_setters`` field for
+ * setter-keyed systems, so raising the setters spinner repaints the court
+ * immediately. Keyless systems pass 0: a 6-6 has no setter role at all,
+ * and `setter_slots` degrades a non-spreadable count to the acting slot
+ * alone -- exactly the single ``fixed_setter_slot`` such a system has
+ * always marked. */
+export function setterSlots(state: EditorState, key: number): number[] {
+  const count = state.uses_setter_roles ? state.expected_setters : 0;
+  return setter_slots(actingSetterSlot(state, key), count);
+}
+
 /** The small hint under a token: the offset-category role ("S"/"OH"/
- * "MB"/"OPP") for setter-keyed systems, or "sets"/"" for keyless ones. */
+ * "MB"/"OPP") for setter-keyed systems, or "sets"/"" for keyless ones.
+ *
+ * A slot that IS one of this system's setters always reads "S", even
+ * though its offset from the chart key would categorise it otherwise --
+ * a 6-2's second setter sits at offset 3 ("OPP") and a 6-3's other two at
+ * offsets 2 and 4 ("MB"), which would print a role the player does not
+ * play. */
 export function roleHint(state: EditorState, key: number, slot: number): string {
   if (state.uses_setter_roles) {
+    if (setterSlots(state, key).includes(slot)) {
+      return "S";
+    }
     return _OFFSET_CATEGORY[(((slot - key) % 6) + 6) % 6]; // Python's `%`
   }
   return slot === state.fixed_setter_slot ? "sets" : "";

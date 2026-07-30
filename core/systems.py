@@ -8,7 +8,9 @@ system only changes three display/assist concerns:
     (`system_xy`), since a 6-2's two setters and a 6-6's keyless
     rotation stand differently than a 5-1;
   * who the "acting setter" is for UI assists like the setter-tracker
-    highlight (`acting_setter_slot_for`);
+    highlight (`acting_setter_slot_for`), and -- for a system carrying
+    more than one setter -- where its other setters stand around the
+    rotation (`setter_slots`);
   * a soft expectation of how many setters a lineup should carry, for
     setup-time validation (`SystemSpec.expected_setters`).
 
@@ -233,3 +235,28 @@ def acting_setter_slot_for(spec: SystemSpec,
     if not spec.uses_setter_roles:
         return spec.fixed_setter_slot
     return acting_setter_slot(roles)
+
+
+def setter_slots(acting_slot: int | None, count: int) -> list[int]:
+    """Lineup slots (0..5) held by this system's `count` setters, the
+    acting one FIRST -- for UIs that want to show a coach every setter
+    in the system, not just the one running this rally.
+
+    Setters are spread evenly around the rotation, which is what keeps
+    exactly one of them back row in every rotation (the 6-2 rule
+    `core.formations.acting_setter_slot` already documents: two setters
+    diagonal, 3 apart). So the spread is `step = 6 // count` from the
+    acting setter: count=2 gives acting + its diagonal, count=3 gives
+    acting, +2, +4 (a 6-3).
+
+    Only counts that divide the six slots (1, 2, 3, 6) can be spread
+    evenly, so anything else -- and any count <= 1 -- falls back to just
+    the acting setter rather than guessing where the extras stand. With
+    no identifiable acting setter there is nothing to spread from and
+    the answer is empty: a UI must never invent a setter."""
+    if acting_slot is None:
+        return []
+    if count <= 1 or 6 % count != 0:
+        return [acting_slot]
+    step = 6 // count
+    return [(acting_slot + i * step) % 6 for i in range(count)]

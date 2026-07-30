@@ -18,7 +18,10 @@ from core.formations import Mode                         # noqa: E402
 from core.rotation import serve_xy                       # noqa: E402
 from core.systems import SYSTEMS                          # noqa: E402
 from ui.main_window import MainWindow                     # noqa: E402
-from ui.system_editor import M, SystemEditorWindow        # noqa: E402
+from ui.player_token import (SETTER_ALT_COLOR,            # noqa: E402
+                             SETTER_COLOR)
+from ui.system_editor import (M, TEAM_GREEN,              # noqa: E402
+                              SystemEditorWindow)
 
 
 @pytest.fixture(scope="module")
@@ -38,6 +41,11 @@ def clean_registry():
 
 def _pos_m(tok):
     return (tok.pos().x() / M, tok.pos().y() / M)
+
+
+def _colors(ed):
+    """Each slot's token colour as lowercase hex (QColor.name())."""
+    return {slot: tok.color.name() for slot, tok in ed._tokens.items()}
 
 
 # --------------------------------------------------------------- posing
@@ -64,6 +72,70 @@ def test_loading_five_one_key_three_offense_poses_that_chart(app):
         px, py = _pos_m(ed._tokens[slot])
         assert px == pytest.approx(x)
         assert py == pytest.approx(y)
+    ed.close()
+
+
+# --------------------------------------------------------- setter colours
+
+def test_six_two_paints_both_setters(app):
+    """A 6-2 declares two setters, so the acting setter and its diagonal
+    are both blue -- the whole point of the alt colour."""
+    ed = SystemEditorWindow()
+    ed._load_base("6-2")
+    ed._set_key(1)
+    assert ed._setter_slots() == [1, 4]
+    colors = _colors(ed)
+    assert colors[1] == SETTER_COLOR
+    assert colors[4] == SETTER_ALT_COLOR
+    for slot in (0, 2, 3, 5):
+        assert colors[slot] == TEAM_GREEN
+    # and the second setter reads "S", not the "OPP" slot it stands in
+    assert ed._tokens[1].hint == "S"
+    assert ed._tokens[4].hint == "S"
+    ed.close()
+
+
+def test_raising_expected_setters_to_three_reposes_as_a_six_three(app):
+    """The spin box is a live display control: bumping it to 3 must
+    re-pose straight away and light up the 6-3's three setters."""
+    ed = SystemEditorWindow()
+    ed._load_base("6-2")
+    ed._set_key(1)
+    ed._expected_spin.setValue(3)               # fires valueChanged
+    assert ed._setter_slots() == [1, 3, 5]
+    colors = _colors(ed)
+    assert colors[1] == SETTER_COLOR
+    assert colors[3] == SETTER_ALT_COLOR
+    assert colors[5] == SETTER_ALT_COLOR
+    for slot in (0, 2, 4):
+        assert colors[slot] == TEAM_GREEN
+        assert ed._tokens[slot].hint != "S"
+    ed.close()
+
+
+def test_five_one_paints_exactly_one_setter(app):
+    ed = SystemEditorWindow()
+    ed._load_base("5-1")
+    ed._set_key(2)
+    colors = _colors(ed)
+    assert colors[2] == SETTER_COLOR
+    assert [s for s, c in colors.items()
+            if c in (SETTER_COLOR, SETTER_ALT_COLOR)] == [2]
+    ed.close()
+
+
+def test_keyless_six_six_paints_only_its_fixed_setting_slot(app):
+    """A keyless system has no setter role, so its 0 expected setters must
+    not blank the one slot that actually sets (P3)."""
+    ed = SystemEditorWindow()
+    ed._load_base("6-6")
+    assert ed._expected_spin.value() == 0
+    colors = _colors(ed)
+    assert colors[2] == SETTER_COLOR
+    assert [s for s, c in colors.items()
+            if c in (SETTER_COLOR, SETTER_ALT_COLOR)] == [2]
+    assert ed._tokens[2].hint == "sets"
+    assert ed._tokens[0].hint == ""
     ed.close()
 
 
@@ -145,14 +217,41 @@ def test_serve_server_is_pinned_and_not_stored(app):
 
 # ------------------------------------------------------------ save / delete
 
-def test_save_is_gated_on_a_non_builtin_id(app):
+def test_save_is_offered_on_a_builtin_id_with_a_copy_hint(app):
     ed = SystemEditorWindow()
     ed._load_base("6-6")                       # id field is now the built-in
-    assert not ed._save_btn.isEnabled()
-    assert "change the id" in ed._id_hint.text()
+    assert ed._save_btn.isEnabled()            # never a dead button
+    assert "keeps your changes as a copy" in ed._id_hint.text()
     ed._id_edit.setText("my-6-6")
     assert ed._save_btn.isEnabled()
     assert ed._id_hint.text() == ""
+    ed._id_edit.setText("not a valid id")      # only a malformed id blocks
+    assert not ed._save_btn.isEnabled()
+    assert "id must start alphanumeric" in ed._id_hint.text()
+    ed.close()
+
+
+def test_saving_on_top_of_a_builtin_stores_a_copy(
+        app, tmp_path, clean_registry):
+    builtin = SYSTEMS["6-6"]
+    ed = SystemEditorWindow(systems_base=str(tmp_path))
+    ed._load_base("6-6")                       # id field is the built-in
+    ed._on_save()
+
+    # the built-in is untouched and the edits landed under a free copy id
+    assert not (tmp_path / "6-6.json").exists()
+    assert (tmp_path / "6-6-copy.json").exists()
+    assert SYSTEMS["6-6"] is builtin
+    assert "6-6-copy" in SYSTEMS
+    assert "cannot be changed" in ed.statusBar().currentMessage()
+    # the editor now edits the copy, so a second Save updates it in place
+    assert ed._id_edit.text() == "6-6-copy"
+    assert ed._delete_btn.isEnabled()
+
+    # a further save straight off the built-in must not clobber that copy
+    ed._load_base("6-6")
+    ed._on_save()
+    assert (tmp_path / "6-6-copy-2.json").exists()
     ed.close()
 
 

@@ -9,23 +9,26 @@ import {
   serve_xy,
 } from "./core/rotation";
 import { SystemSpec, system_ids, SYSTEMS } from "./core/systems";
-import { deserialize_system, serialize_system } from "./core/user_systems";
+import {
+  BUILTIN_IDS, deserialize_system, serialize_system,
+} from "./core/user_systems";
 import {
   EditorState,
   X_MAX,
   X_MIN,
   Y_MAX,
   Y_MIN,
-  actingSetterSlot,
   buildSpec,
   canSave,
   clampCoord,
   commitMove,
+  copyIdFor,
   copyKey,
   createEditorState,
   replaceOrAppend,
   roleHint,
   saveHint,
+  setterSlots,
 } from "./systemEditorState";
 
 /** Full-screen, touch-first playing-system editor: the tablet port of
@@ -42,6 +45,7 @@ const LINE_WIDTH = 0.075;
 const NET_WIDTH = 0.175;
 const TOKEN_RADIUS = 0.75;
 const SETTER_FILL = "#1565c0";
+const SETTER_ALT_FILL = "#64b5f6"; // a system's non-acting setter(s)
 const TEAM_FILL = "#2e7d32";
 const OVERLAP_RING = "#e53935";
 
@@ -84,17 +88,26 @@ export function SystemEditor({
   const [copyFrom, setCopyFrom] = useState(0);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [status, setStatus] = useState<string>("");
+  const [statusWarn, setStatusWarn] = useState(false);
   const svgRef = useRef<SVGSVGElement | null>(null);
 
   const state = stateRef.current;
   const rerender = () => bump((n) => n + 1);
+
+  // The line next to the id hint: green for a plain confirmation, red for
+  // a save that did not do quite what the button said (a built-in copied,
+  // a stored system replaced).
+  function note(text: string, warn = false): void {
+    setStatus(text);
+    setStatusWarn(warn);
+  }
 
   function loadBase(baseId: string): void {
     stateRef.current = createEditorState(baseId);
     setKey(0);
     setCopyFrom(0);
     setDrag(null);
-    setStatus("");
+    note("");
     rerender();
   }
 
@@ -104,7 +117,9 @@ export function SystemEditor({
   }
 
   // --- token positions (with the live drag override) ---------------------
-  const acting = actingSetterSlot(state, key);
+  // Every setter of the system, acting one first -- recomputed each render,
+  // so editing the setters field repaints the court live.
+  const setters = setterSlots(state, key);
   const chart = state.working[mode]![key];
 
   function slotPos(slot: number): [number, number] {
@@ -186,7 +201,7 @@ export function SystemEditor({
     }
     commitMove(state, mode, key, slot, drag.x, drag.y);
     setDrag(null);
-    setStatus("");
+    note("");
     rerender();
   }
 
@@ -200,19 +215,44 @@ export function SystemEditor({
     if (!savable) {
       return;
     }
+    // Built-in ids are immutable everywhere (the registry merge, the
+    // import filter and the desktop's file writer all refuse them), so a
+    // save on top of one is redirected to a free copy id instead of being
+    // blocked -- the scouter never loses the edits they just made. Saving
+    // over one of their OWN systems is the update flow and just happens.
+    const overBuiltin = BUILTIN_IDS.has(sid);
+    const targetId = overBuiltin
+      ? copyIdFor(sid, userSystems.map((s) => s.id))
+      : sid;
+    const replaced = userSystems.some((s) => s.id === targetId);
+    // A copy that kept the built-in's label would be indistinguishable from
+    // it in the base picker; a label the scouter typed is kept as is.
+    let targetLabel = state.label.trim();
+    if (overBuiltin && targetLabel === SYSTEMS[sid].label) {
+      const nth = /-copy-(\d+)$/.exec(targetId);
+      targetLabel += nth == null ? " (copy)" : ` (copy ${nth[1]})`;
+    }
     let spec: SystemSpec;
     try {
       // Round-trip through the real validator so a save can never store a
       // system the app would later reject on load.
-      spec = deserialize_system(serialize_system(buildSpec(state)));
+      spec = deserialize_system(
+        serialize_system(buildSpec({ ...state, id: targetId, label: targetLabel })));
     } catch (e) {
-      setStatus((e as Error).message);
+      note((e as Error).message, true);
       return;
     }
     const nextList = replaceOrAppend(userSystems, spec);
     onCommitSystems(nextList);
     loadBase(spec.id); // reload from the (now merged) registry
-    setStatus(`saved ${spec.id}`);
+    if (overBuiltin) {
+      note(`'${sid}' is built-in and cannot be changed — `
+        + `saved your version as '${spec.id}'`, true);
+    } else if (replaced) {
+      note(`updated ${spec.id} — the stored system was replaced`, true);
+    } else {
+      note(`saved ${spec.id}`);
+    }
   }
 
   function onDelete(): void {
@@ -224,7 +264,7 @@ export function SystemEditor({
     }
     onDropSystem(sid);
     loadBase(system_ids()[0]);
-    setStatus(`deleted ${sid}`);
+    note(`deleted ${sid}`);
   }
 
   function onRevert(): void {
@@ -272,11 +312,11 @@ export function SystemEditor({
             <input
               type="number"
               min="0"
-              max="2"
+              max="3"
               value={String(state.expected_setters)}
               onInput={(e) => {
                 const raw = Number((e.currentTarget as HTMLInputElement).value);
-                const clamped = Number.isFinite(raw) ? Math.min(Math.max(Math.round(raw), 0), 2) : 0;
+                const clamped = Number.isFinite(raw) ? Math.min(Math.max(Math.round(raw), 0), 3) : 0;
                 patch({ expected_setters: clamped });
               }}
             />
@@ -299,7 +339,11 @@ export function SystemEditor({
 
         <div className="system-editor-hintline">
           {hint !== "" ? <span className="system-editor-hint">{hint}</span> : null}
-          {status !== "" ? <span className="system-editor-status">{status}</span> : null}
+          {status !== "" ? (
+            <span className={statusWarn ? "system-editor-warn" : "system-editor-status"}>
+              {statusWarn ? `⚠ ${status}` : status}
+            </span>
+          ) : null}
         </div>
 
         <div className="system-editor-tabs">
@@ -399,7 +443,15 @@ export function SystemEditor({
               const [x, y] = slotPos(slot);
               const ghost = mode === Mode.SERVE_BASE && slot === 0;
               const hintText = ghost ? "serves" : roleHint(state, key, slot);
-              const fill = slot === acting ? SETTER_FILL : TEAM_FILL;
+              // Acting setter (the chart key) solid blue; a 6-2's / 6-3's
+              // other setters lighter, so they read as setters without
+              // competing with the one this chart is keyed on.
+              let fill = TEAM_FILL;
+              if (slot === setters[0]) {
+                fill = SETTER_FILL;
+              } else if (setters.includes(slot)) {
+                fill = SETTER_ALT_FILL;
+              }
               return (
                 <g
                   key={slot}

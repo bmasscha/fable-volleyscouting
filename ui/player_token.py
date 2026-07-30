@@ -13,6 +13,7 @@ from .token_colors import ink_for, outline_for
 TOKEN_RADIUS = 30.0  # px; 60 px diameter = comfortable touch target
 
 SETTER_COLOR = "#1565c0"
+SETTER_ALT_COLOR = "#64b5f6"   # a system's non-acting setter(s)
 LIBERO_COLOR = "#c62828"
 
 

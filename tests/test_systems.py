@@ -9,8 +9,8 @@ from core.formations import Mode
 from core.models import HOME, AWAY, MatchConfig, Role
 from core.rotation import LEFT, RIGHT, position_xy, serve_xy
 from core.systems import (DEFAULT_SYSTEM, SYSTEMS, acting_setter_slot_for,
-                          chart_key, get_system, system_ids, system_note,
-                          system_xy)
+                          chart_key, get_system, setter_slots, system_ids,
+                          system_note, system_xy)
 
 S, OH, MB, OPP, L, U = (Role.SETTER, Role.OUTSIDE, Role.MIDDLE,
                         Role.OPPOSITE, Role.LIBERO, Role.UNIVERSAL)
@@ -240,6 +240,47 @@ class TestSixSixP1:
         # its P3-sets behaviour unchanged.
         spec = SYSTEMS["6-6"]
         assert acting_setter_slot_for(spec, {i: U for i in ALL_SLOTS}) == 2
+
+
+# --- 3c. setter_slots: where a system's setters stand ---------------
+class TestSetterSlots:
+    def test_one_setter_is_just_the_acting_one(self):
+        assert setter_slots(2, 1) == [2]
+
+    def test_two_setters_are_diagonal(self):
+        # the 6-2 rule: 3 apart, so exactly one is always back row
+        assert setter_slots(0, 2) == [0, 3]
+
+    def test_two_setters_wrap_around(self):
+        assert setter_slots(4, 2) == [4, 1]
+
+    def test_three_setters_are_two_apart(self):
+        assert setter_slots(1, 3) == [1, 3, 5]
+
+    def test_three_setters_wrap_around(self):
+        assert setter_slots(5, 3) == [5, 1, 3]
+
+    def test_acting_setter_is_always_first(self):
+        for acting in ALL_SLOTS:
+            for count in (1, 2, 3):
+                assert setter_slots(acting, count)[0] == acting
+
+    def test_zero_count_still_yields_the_acting_setter(self):
+        # a keyless system declares 0 setters but one slot still sets
+        assert setter_slots(3, 0) == [3]
+
+    def test_non_divisor_count_falls_back_to_the_acting_setter(self):
+        # 4 setters cannot be spread evenly over six slots -> no guessing
+        assert setter_slots(2, 4) == [2]
+        assert setter_slots(2, 5) == [2]
+
+    def test_six_setters_are_every_slot(self):
+        assert setter_slots(0, 6) == [0, 1, 2, 3, 4, 5]
+
+    def test_no_acting_setter_yields_nothing(self):
+        # an unidentifiable setter must never be invented by the UI
+        for count in (0, 1, 2, 3, 6):
+            assert setter_slots(None, count) == []
 
 
 # --- 4. registry lookups -------------------------------------------

@@ -11,6 +11,7 @@ import {
   acting_setter_slot_for,
   chart_key,
   get_system,
+  setter_slots,
   system_ids,
   system_note,
   system_xy,
@@ -312,6 +313,50 @@ describe("TestSixSixP1", () => {
     const allUniversal: Record<number, Role> = {};
     for (const i of ALL_SLOTS) allUniversal[i] = U;
     expect(acting_setter_slot_for(spec, allUniversal)).toBe(2);
+  });
+});
+
+// --- 3c. setter_slots: where a system's setters stand -------------------
+describe("TestSetterSlots", () => {
+  test("test_one_setter_is_just_the_acting_slot", () => {
+    for (const slot of ALL_SLOTS) {
+      expect(setter_slots(slot, 1)).toEqual([slot]);
+    }
+  });
+
+  test("test_two_setters_are_diagonal_acting_first", () => {
+    expect(setter_slots(0, 2)).toEqual([0, 3]);
+    expect(setter_slots(1, 2)).toEqual([1, 4]);
+    expect(setter_slots(4, 2)).toEqual([4, 1]); // wraps past P6
+  });
+
+  test("test_three_setters_are_every_other_slot", () => {
+    expect(setter_slots(0, 3)).toEqual([0, 2, 4]);
+    expect(setter_slots(1, 3)).toEqual([1, 3, 5]);
+    expect(setter_slots(5, 3)).toEqual([5, 1, 3]); // wraps past P6
+  });
+
+  test("test_zero_count_still_marks_the_acting_slot", () => {
+    // A keyless system passes 0 and must keep marking its one setting slot.
+    expect(setter_slots(2, 0)).toEqual([2]);
+  });
+
+  test("test_count_that_does_not_divide_six_falls_back", () => {
+    // 4 and 5 setters cannot be spread evenly around six slots, so rather
+    // than guess positions only the acting setter is reported.
+    expect(setter_slots(0, 4)).toEqual([0]);
+    expect(setter_slots(3, 5)).toEqual([3]);
+  });
+
+  test("test_six_setters_are_every_slot", () => {
+    expect(setter_slots(0, 6)).toEqual(ALL_SLOTS);
+  });
+
+  test("test_no_identifiable_setter_marks_nothing", () => {
+    // The UI must never invent a setter when none can be identified.
+    expect(setter_slots(null, 1)).toEqual([]);
+    expect(setter_slots(null, 2)).toEqual([]);
+    expect(setter_slots(null, 0)).toEqual([]);
   });
 });
 
