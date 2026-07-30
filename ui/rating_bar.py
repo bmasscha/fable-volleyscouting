@@ -1,5 +1,6 @@
 """Bottom action bar: the four big rating buttons, manual point buttons,
-undo, the phase prompt, and the small serve-rating override chips."""
+undo, the phase prompt, and the small override chips that re-rate the
+auto-rated touch just entered (a serve, or an attack that landed out)."""
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt, pyqtSignal
@@ -28,7 +29,7 @@ CONTEXT_HINTS = {
 
 class RatingBar(QWidget):
     rating_clicked = pyqtSignal(object)        # Rating
-    serve_rating_clicked = pyqtSignal(object)  # Rating (override of last serve)
+    chip_rating_clicked = pyqtSignal(object)   # Rating (override of last touch)
     overpass_clicked = pyqtSignal()            # reception went straight back
     undo_clicked = pyqtSignal()
     point_left_clicked = pyqtSignal()
@@ -40,12 +41,13 @@ class RatingBar(QWidget):
         root.setContentsMargins(8, 2, 8, 6)
         root.setSpacing(4)
 
-        # --- prompt row + serve override chips
+        # --- prompt row + rating override chips
         top = QHBoxLayout()
         self.prompt = QLabel("")
         self.prompt.setStyleSheet("font-size: 19px; font-weight: 600; color: #ddd;")
         top.addWidget(self.prompt, 1)
-        top.addWidget(QLabel("<span style='color:#999'>serve:</span>"))
+        self._chip_label = QLabel("")
+        top.addWidget(self._chip_label)
         self._chips = QButtonGroup(self)
         self._chip_widgets: dict[Rating, QToolButton] = {}
         for r in (Rating.ERROR, Rating.POOR, Rating.GOOD, Rating.PERFECT):
@@ -57,11 +59,10 @@ class RatingBar(QWidget):
                 f"QToolButton {{ font-size:18px; font-weight:bold; color:white; "
                 f"background:{RATING_STYLE[r][0]}; border-radius:6px; }}"
                 "QToolButton:checked { border: 3px solid #ffd600; }")
-            b.clicked.connect(lambda _=False, rr=r: self.serve_rating_clicked.emit(rr))
+            b.clicked.connect(lambda _=False, rr=r: self.chip_rating_clicked.emit(rr))
             self._chips.addButton(b)
             self._chip_widgets[r] = b
             top.addWidget(b)
-        self._serve_chip_holder = [w for w in self._chip_widgets.values()]
         root.addLayout(top)
 
         # --- big buttons row
@@ -122,12 +123,19 @@ class RatingBar(QWidget):
         row.addWidget(self.undo, 2)
 
         root.addLayout(row)
-        self.show_serve_chips(False)
+        self.show_rate_chips(False)
 
     def set_prompt(self, text: str) -> None:
         self.prompt.setText(text)
 
-    def show_serve_chips(self, visible: bool, current: Rating | None = None) -> None:
+    def show_rate_chips(self, visible: bool, current: Rating | None = None,
+                        label: str = "serve") -> None:
+        """Show the override chips for the auto-rated touch just entered.
+        `label` names it ("serve" / "attack") so the scouter knows what the
+        chips will re-rate."""
+        self._chip_label.setText(
+            f"<span style='color:#999'>{label}:</span>" if visible else "")
+        self._chip_label.setVisible(visible)
         for r, w in self._chip_widgets.items():
             w.setVisible(visible)
             w.setChecked(current == r)

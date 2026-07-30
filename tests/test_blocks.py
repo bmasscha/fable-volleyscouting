@@ -3,8 +3,9 @@ covered-ball (block cover) branch, serialization of block_touch and
 vertex normalization in the trajectory charts."""
 import pytest
 
-from core.blocks import (BLOCK_OUT, COVERED, IN_PLAY,
-                         classify_block_deflection, landing_in_bounds)
+from core.blocks import (BLOCK_NET_ZONE, BLOCK_OUT, COVERED, IN_PLAY,
+                         classify_block_deflection, is_block_touch,
+                         landing_in_bounds, unblocked_attack_is_error)
 from core.engine import MatchEngine, Phase
 from core.events import (AttackEvent, DigEvent, ReceptionEvent, ServeEvent,
                          event_from_dict, event_to_dict)
@@ -50,6 +51,56 @@ def test_landing_on_blocker_half_stays_in_play():
 def test_landing_exactly_on_net_plane_counts_as_blocker_side():
     assert classify_block_deflection(LEFT, 0.0, 4.5) == IN_PLAY
     assert classify_block_deflection(RIGHT, 0.0, 4.5) == IN_PLAY
+
+
+# ----------------------------------- unblocked attacks / block-touch tips
+#
+# The same three landing zones settle an attack drawn WITHOUT a block touch,
+# with the opposite verdict: only a ball that reached the opponents' court
+# keeps the rally alive.
+
+
+@pytest.mark.parametrize("side,x,y", [
+    (LEFT, 9.5, 4.5),       # past the far baseline
+    (RIGHT, -9.5, 4.5),     # past the far baseline
+    (LEFT, 3.0, 9.5),       # past a sideline
+    (RIGHT, 3.0, -0.5),     # past a sideline
+])
+def test_attack_landing_out_of_bounds_is_an_error(side, x, y):
+    assert unblocked_attack_is_error(side, x, y)
+
+
+@pytest.mark.parametrize("side,x", [(LEFT, -3.0), (RIGHT, 3.0)])
+def test_attack_that_never_crossed_the_net_is_an_error(side, x):
+    """Landing in bounds but on the attacker's own half means the ball never
+    made it over -- hit into the net."""
+    assert unblocked_attack_is_error(side, x, 4.0)
+
+
+@pytest.mark.parametrize("side,x", [(LEFT, 3.0), (RIGHT, -3.0)])
+def test_attack_into_the_opponents_court_still_needs_a_rating(side, x):
+    assert not unblocked_attack_is_error(side, x, 4.0)
+
+
+def test_error_and_block_touch_are_exact_opposites_at_the_net():
+    """The same arrow tip cannot be both: just across the net it is a block
+    contact (prime the second stroke), just short of it the ball never
+    crossed (score '!'). This is what keeps the two gestures apart."""
+    for side, across, short in ((LEFT, 0.5, -0.5), (RIGHT, -0.5, 0.5)):
+        assert is_block_touch(side, across, 4.5)
+        assert not unblocked_attack_is_error(side, across, 4.5)
+        assert not is_block_touch(side, short, 4.5)
+        assert unblocked_attack_is_error(side, short, 4.5)
+
+
+def test_block_touch_must_be_within_the_net_zone():
+    # deep in the opponents' court is a normal attack, not a block contact
+    assert not is_block_touch(LEFT, BLOCK_NET_ZONE + 0.1, 4.5)
+    assert is_block_touch(LEFT, BLOCK_NET_ZONE, 4.5)
+
+
+def test_block_touch_out_of_bounds_is_not_a_block_touch():
+    assert not is_block_touch(LEFT, 0.5, 9.9)
 
 
 # ------------------------------------------------------------ engine flows

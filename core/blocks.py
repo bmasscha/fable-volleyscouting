@@ -1,9 +1,12 @@
-"""Block deflection classification for two-segment attack trajectories.
+"""Where an attack landed, and what that means.
 
 A blocked attack is drawn in two strokes: attacker -> block touch (at the
 net), then block touch -> where the deflected ball ended up. Only the final
 landing point decides the outcome. All functions are pure so the engine,
 the desktop UI and the tablet port share a single definition.
+
+The same three landing zones also settle an *unblocked* attack, with the
+opposite verdict -- see `unblocked_attack_is_error`.
 """
 from __future__ import annotations
 
@@ -37,3 +40,28 @@ def classify_block_deflection(attacker_side: str, x: float, y: float) -> str:
         return BLOCK_OUT
     on_attacker_half = x < 0 if attacker_side == LEFT else x > 0
     return COVERED if on_attacker_half else IN_PLAY
+
+
+def is_block_touch(attacker_side: str, x: float, y: float) -> bool:
+    """True when an attack arrow ending at (x, y) can be a block contact:
+    it must sit in the BLOCKERS' court -- the ball actually crossed -- and
+    within BLOCK_NET_ZONE of the net. A tip on the attacker's own side of
+    the net means the attack never made it over, which is an error, not a
+    block; that arrow is scored '!' instead of priming a second stroke.
+    """
+    return (classify_block_deflection(attacker_side, x, y) == IN_PLAY
+            and abs(x) <= BLOCK_NET_ZONE)
+
+
+def unblocked_attack_is_error(attacker_side: str, x: float, y: float) -> bool:
+    """True when an attack drawn WITHOUT a block touch is the attacker's own
+    fault, because the ball never legally reached the opponents' court: it
+    landed beyond the lines (out), or short on the attacker's own half (hit
+    into the net). Only IN_PLAY -- in bounds, on the blockers' side -- keeps
+    the rally alive and still needs a rating.
+
+    This is the mirror image of the blocked case: for the very same landing
+    a block touch makes it '#' (block-out) or '-' (covered), while no block
+    touch makes it '!'.
+    """
+    return classify_block_deflection(attacker_side, x, y) != IN_PLAY

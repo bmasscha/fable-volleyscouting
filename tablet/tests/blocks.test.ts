@@ -5,8 +5,9 @@
 import { describe, expect, test } from "vitest";
 
 import {
-  BLOCK_OUT, COVERED, IN_PLAY,
-  classify_block_deflection, landing_in_bounds,
+  BLOCK_NET_ZONE, BLOCK_OUT, COVERED, IN_PLAY,
+  classify_block_deflection, is_block_touch, landing_in_bounds,
+  unblocked_attack_is_error,
 } from "../src/core/blocks";
 import { MatchEngine, Phase } from "../src/core/engine";
 import { AttackEvent, event_from_dict, event_to_dict } from "../src/core/events";
@@ -73,6 +74,54 @@ describe("classification", () => {
   test("landing exactly on net plane counts as blocker side", () => {
     expect(classify_block_deflection(LEFT, 0.0, 4.5)).toBe(IN_PLAY);
     expect(classify_block_deflection(RIGHT, 0.0, 4.5)).toBe(IN_PLAY);
+  });
+});
+
+// ----------------------------- unblocked attacks / block-touch tips
+//
+// The same three landing zones settle an attack drawn WITHOUT a block touch,
+// with the opposite verdict: only a ball that reached the opponents' court
+// keeps the rally alive.
+
+describe("unblocked attack landings", () => {
+  test.each([
+    [LEFT, 9.5, 4.5],     // past the far baseline
+    [RIGHT, -9.5, 4.5],   // past the far baseline
+    [LEFT, 3.0, 9.5],     // past a sideline
+    [RIGHT, 3.0, -0.5],   // past a sideline
+  ])("landing out of bounds (%s, %f, %f) is an error", (side, x, y) => {
+    expect(unblocked_attack_is_error(side as string, x as number, y as number)).toBe(true);
+  });
+
+  test("an attack that never crossed the net is an error", () => {
+    // in bounds but on the attacker's own half -- hit into the net
+    expect(unblocked_attack_is_error(LEFT, -3.0, 4.0)).toBe(true);
+    expect(unblocked_attack_is_error(RIGHT, 3.0, 4.0)).toBe(true);
+  });
+
+  test("an attack into the opponents' court still needs a rating", () => {
+    expect(unblocked_attack_is_error(LEFT, 3.0, 4.0)).toBe(false);
+    expect(unblocked_attack_is_error(RIGHT, -3.0, 4.0)).toBe(false);
+  });
+
+  test("error and block touch are exact opposites at the net", () => {
+    // the same arrow tip cannot be both: just across the net it is a block
+    // contact, just short of it the ball never crossed
+    for (const [side, across, short] of [[LEFT, 0.5, -0.5], [RIGHT, -0.5, 0.5]] as const) {
+      expect(is_block_touch(side, across, 4.5)).toBe(true);
+      expect(unblocked_attack_is_error(side, across, 4.5)).toBe(false);
+      expect(is_block_touch(side, short, 4.5)).toBe(false);
+      expect(unblocked_attack_is_error(side, short, 4.5)).toBe(true);
+    }
+  });
+
+  test("a block touch must be within the net zone", () => {
+    expect(is_block_touch(LEFT, BLOCK_NET_ZONE + 0.1, 4.5)).toBe(false);
+    expect(is_block_touch(LEFT, BLOCK_NET_ZONE, 4.5)).toBe(true);
+  });
+
+  test("an out-of-bounds tip is not a block touch", () => {
+    expect(is_block_touch(LEFT, 0.5, 9.9)).toBe(false);
   });
 });
 

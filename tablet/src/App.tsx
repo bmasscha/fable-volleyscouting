@@ -3,10 +3,11 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { CourtSurface } from "./CourtSurface";
 import {
   BLOCK_GRAB_RADIUS,
-  BLOCK_NET_ZONE,
   BLOCK_OUT,
   COVERED,
   classify_block_deflection,
+  is_block_touch,
+  unblocked_attack_is_error,
 } from "./core/blocks";
 import { MatchEngine, Phase } from "./core/engine";
 import { MatchEvent, SetStartEvent } from "./core/events";
@@ -1946,7 +1947,12 @@ export function App() {
     setScreen("match");
   }
 
-  function appendEvent(event: MatchEvent | MatchEvent[]): MatchEngine | null {
+  /** Commit one or more events. `baseEvents` replaces the log they are
+   * appended to -- a re-rate passes the log with the corrected touch (and the
+   * app's own follow-up swaps) already dropped, so the auto-libero drain and
+   * the warnings below are re-derived against the new outcome. */
+  function appendEvent(event: MatchEvent | MatchEvent[],
+                       baseEvents?: MatchEvent[]): MatchEngine | null {
     if (session == null) {
       return null;
     }
@@ -1954,8 +1960,9 @@ export function App() {
     if (inputs.length === 0) {
       return null;
     }
+    const base = baseEvents ?? session.events;
     const preview = new MatchEngine(session.config, session.teams);
-    preview.load_events(session.events);
+    preview.load_events(base);
     // a gesture may log more than one event at once (e.g. a reception and the
     // blocked attack drawn out of it); warnings reflect the last, decisive one
     const appended: MatchEvent[] = [];
@@ -1989,7 +1996,7 @@ export function App() {
     }
     commit({
       ...session,
-      events: [...session.events, ...appended],
+      events: [...base, ...appended],
       lastWarnings: warnings.length ? warnings : autoNotices,
       savedAt: Date.now(),
     });
@@ -2060,11 +2067,18 @@ export function App() {
       ?? null;
   }
 
+  /** Arm the drawn attack for a rating tap -- unless it never reached the
+   * opponents' court, in which case the rally is already decided and it is
+   * logged '!' straight away. `priorEvents` are touches the same gesture
+   * implies (the reception it was drawn out of); they must be committed in
+   * ONE appendEvent call with the attack, because appendEvent reads the
+   * committed session and a second call in the same gesture would drop them. */
   function primePendingAttack(
     sourceEngine: MatchEngine,
     teamKey: TeamKey,
     trajectory: [number, number, number, number],
     preferCurrentCandidate = true,
+    priorEvents: MatchEvent[] = [],
   ): void {
     const attacker = preferCurrentCandidate && candidate?.teamKey === teamKey
       ? candidate.playerId
@@ -2074,9 +2088,31 @@ export function App() {
       return;
     }
     setCandidate({ teamKey, playerId: attacker });
-    setPendingAttack({ teamKey, playerId: attacker, trajectory });
     setAttackPlayer(attacker);
     setInteractionHint(null);
+    if (unblocked_attack_is_error(sourceEngine.side_of(teamKey), trajectory[2], trajectory[3])) {
+      // the ball never reached the opponents' court -- out, or into the net --
+      // so the rally is already decided: auto-finalize with '!' and no rating
+      // tap, exactly like an out serve. A defensive touch that put it out is
+      // fixed with the '#' override chip.
+      setPendingAttack(null);
+      appendEvent([
+        ...priorEvents,
+        {
+          type: "attack",
+          team: teamKey,
+          player_id: attacker,
+          rating: Rating.ERROR,
+          trajectory,
+        },
+      ]);
+      setCandidate(null);
+      return;
+    }
+    if (priorEvents.length > 0) {
+      appendEvent(priorEvents);
+    }
+    setPendingAttack({ teamKey, playerId: attacker, trajectory });
   }
 
   function primeDigger(sourceEngine: MatchEngine, teamKey: TeamKey, trajectory: [number, number, number, number] | null): void {
@@ -2092,29 +2128,45 @@ export function App() {
     setDigPlayer(digger);
   }
 
-  function rerateLastServe(rating: Rating): void {
+  /** Index of the last event the scouter actually entered, looking past the
+   * auto libero swaps the app appended behind it -- an attack error ends the
+   * rally, so the drain can run right after the very touch being re-rated. */
+  function lastScoutedIndex(events: MatchEvent[]): number {
+    let i = events.length - 1;
+    while (i >= 0) {
+      const e = events[i];
+      if (e.type === "libero_swap" && e.auto) {
+        i -= 1;
+        continue;
+      }
+      break;
+    }
+    return i;
+  }
+
+  /** Re-rate the touch the app just auto-rated: the serve entered with the
+   * default '+', or an attack auto-scored '!' because it never reached the
+   * opponents' court. */
+  function rerateLastTouch(rating: Rating): void {
     if (session == null || engine == null || session.events.length === 0) {
       return;
     }
-    const last = session.events[session.events.length - 1];
-    if (last.type !== "serve") {
-      setInteractionHint("Serve rating can only change right after the serve.");
+    const idx = lastScoutedIndex(session.events);
+    const last = idx >= 0 ? session.events[idx] : null;
+    if (last == null
+      || (last.type !== "serve"
+        && !(last.type === "attack" && last.block_touch == null))) {
+      setInteractionHint("The rating can only change right after the touch.");
       return;
     }
     const revised = { ...last, rating };
-    const baseEvents = session.events.slice(0, -1);
-    const preview = new MatchEngine(session.config, session.teams);
-    preview.load_events(baseEvents);
-    const warnings = preview.append(revised);
-    commit({
-      ...session,
-      events: [...baseEvents, revised],
-      lastWarnings: warnings,
-      savedAt: Date.now(),
-    });
+    // drop the app's own follow-up swaps together with the touch they came
+    // from; appendEvent re-drains them against the corrected outcome
+    const preview = appendEvent([revised], session.events.slice(0, idx));
     setPendingAttack(null);
     setInteractionHint(null);
-    if (preview.state.phase === Phase.RECEPTION && revised.trajectory != null) {
+    if (preview != null && revised.type === "serve"
+      && preview.state.phase === Phase.RECEPTION && revised.trajectory != null) {
       const receiver = nearestOnEngine(preview, other(revised.team), revised.trajectory[2], revised.trajectory[3]);
       if (receiver != null) {
         setCandidate({ teamKey: other(revised.team), playerId: receiver });
@@ -2132,25 +2184,25 @@ export function App() {
     y2: number,
     vertex: [number, number] | null = null,
   ): void {
-    if (engine == null) {
+    if (engine == null || session == null) {
       return;
     }
 
     // Single-stroke block gesture: one continuous drag that bends at the net
     // is the attack arrow (start -> block touch) and the deflection (block
-    // touch -> landing) in one motion. The apex sitting in the net zone is what
-    // marks it as a block; anywhere else the bend is ignored and the drag reads
-    // as a straight trajectory. Auto-finalizes the attack -- no rating tap.
-    // Skipped while an attack is pending: that follow-up drag belongs to the
-    // two-stroke deflection path below.
-    if (pendingAttack == null && vertex != null && Math.abs(vertex[0]) <= BLOCK_NET_ZONE) {
+    // touch -> landing) in one motion. The apex sitting just across the net,
+    // in the blockers' court, is what marks it as a block; anywhere else the
+    // bend is ignored and the drag reads as a straight trajectory.
+    // Auto-finalizes the attack -- no rating tap. Skipped while an attack is
+    // pending: that follow-up drag belongs to the two-stroke path below.
+    if (pendingAttack == null && vertex != null) {
       const phase = engine.state.phase;
       const team = phase === Phase.ATTACK || phase === Phase.DEFENSE
         ? teamOnHalf(engine.state, x1)
         : phase === Phase.RECEPTION
           ? receivingTeam
           : null;
-      if (team != null) {
+      if (team != null && is_block_touch(engine.side_of(team), vertex[0], vertex[1])) {
         const attacker = candidate?.teamKey === team
           ? candidate.playerId
           : nearestOnEngine(engine, team, x1, y1);
@@ -2194,11 +2246,11 @@ export function App() {
     }
 
     // Two-stroke block gesture: a follow-up drag that starts near a pending
-    // attack's arrow tip (which sits at the net) is the block deflection.
-    // It auto-finalizes the attack -- no rating tap.
+    // attack's arrow tip (which sits just across the net) is the block
+    // deflection. It auto-finalizes the attack -- no rating tap.
     if (pendingAttack != null) {
       const [, , px, py] = pendingAttack.trajectory;
-      const isDeflection = Math.abs(px) <= BLOCK_NET_ZONE
+      const isDeflection = is_block_touch(engine.side_of(pendingAttack.teamKey), px, py)
         && Math.hypot(x1 - px, y1 - py) <= BLOCK_GRAB_RADIUS;
       if (isDeflection) {
         const team = pendingAttack.teamKey;
@@ -2296,18 +2348,21 @@ export function App() {
         setInteractionHint("Tap the receiver first, or choose one from the list.");
         return;
       }
-      const preview = appendEvent({
+      const receptionEvent: MatchEvent = {
         type: "reception",
         team: receivingTeam,
         player_id: receiver,
         rating: Rating.GOOD,
-      });
+      };
+      // look ahead without committing: the attacker is picked from the court
+      // as it stands AFTER the reception, but reception and attack have to be
+      // committed together in case the drag turns out to be an error
+      const preview = new MatchEngine(session.config, session.teams);
+      preview.load_events([...session.events, receptionEvent]);
       setReceptionPlayer(receiver);
-      if (preview != null) {
-        setCandidate(null);
-        setPendingAttack(null);
-        primePendingAttack(preview, receivingTeam, trajectory, false);
-      }
+      setCandidate(null);
+      setPendingAttack(null);
+      primePendingAttack(preview, receivingTeam, trajectory, false, [receptionEvent]);
       return;
     }
 
@@ -2861,6 +2916,20 @@ export function App() {
   const lastEvent = session.events[session.events.length - 1] ?? null;
   const canRerateServe = engine.state.phase === Phase.RECEPTION && lastEvent?.type === "serve";
   const currentServeRating = lastEvent?.type === "serve" ? lastEvent.rating : null;
+  // an attack drawn out of the opponents' court was auto-scored '!' and ended
+  // the rally -- offer the same chips in case a defensive touch put it out,
+  // which makes it the attacker's point instead. Reaching AWAIT_SERVE at all
+  // means that attack was '!' or '#', and the chips stay up for both so the
+  // override can be taken back.
+  const lastScouted = session.events[lastScoutedIndex(session.events)] ?? null;
+  const canRerateAttack = engine.state.phase === Phase.AWAIT_SERVE
+    && lastScouted?.type === "attack"
+    && lastScouted.block_touch == null
+    && lastScouted.trajectory != null;
+  const chipLabel = canRerateAttack ? "attack" : "serve";
+  const currentChipRating = canRerateAttack
+    ? (lastScouted as { rating: Rating }).rating
+    : currentServeRating;
   const nextSetDraftError = nextSetDraft == null ? null : validateEditedSetStart(nextSetDraft, engine.teams);
   const prompt = courtPrompt(engine, candidate, pendingAttack, armedBench, interactionHint);
   const ratingContext = pendingAttack != null || engine.state.phase === Phase.ATTACK
@@ -3001,15 +3070,15 @@ export function App() {
       <footer className="action-bar">
         <div className="action-prompt-row">
           <p className="action-prompt">{prompt}</p>
-          {canRerateServe ? (
+          {canRerateServe || canRerateAttack ? (
             <div className="serve-chip-strip">
-              <span className="muted">serve:</span>
+              <span className="muted">{chipLabel}:</span>
               {RATING_OPTIONS.map((rating) => (
                 <button
                   key={rating}
                   type="button"
-                  className={`serve-chip-mini rate-${RATING_CLASS[rating]} ${currentServeRating === rating ? "current" : ""}`}
-                  onClick={() => rerateLastServe(rating)}
+                  className={`serve-chip-mini rate-${RATING_CLASS[rating]} ${currentChipRating === rating ? "current" : ""}`}
+                  onClick={() => rerateLastTouch(rating)}
                 >
                   {rating}
                 </button>

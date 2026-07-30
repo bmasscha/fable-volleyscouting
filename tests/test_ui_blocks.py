@@ -47,8 +47,11 @@ def win(app):
     w.close()
 
 
-def _prime_near_net(win, tip=(0.2, 4.5)):
-    """First drag: an AWAY attack that ends by the net (primes pending)."""
+def _prime_near_net(win, tip=(-0.2, 4.5)):
+    """First drag: an AWAY attack drawn just ACROSS the net, into HOME's
+    half, where the block contacted it (primes pending). AWAY plays the
+    right half, so the blockers' side is x < 0; a tip on AWAY's own side
+    would mean the ball never crossed and is auto-scored '!' instead."""
     win.on_trajectory(4.0, 4.5, tip[0], tip[1])
     assert win.pending_attack is not None
     assert abs(tip[0]) <= BLOCK_NET_ZONE
@@ -58,24 +61,24 @@ def test_deflection_out_scores_a_point(win):
     _prime_near_net(win)
     n = len(win.engine.events)
     # second stroke: block deflects the ball out past the right baseline
-    win.on_trajectory(0.3, 4.6, 9.7, 4.5)
+    win.on_trajectory(-0.1, 4.6, 9.7, 4.5)
     assert win.pending_attack is None
     assert len(win.engine.events) == n + 1
     ev = win.engine.events[-1]
     assert isinstance(ev, AttackEvent)
     assert ev.team == AWAY
     assert ev.rating == Rating.PERFECT
-    assert ev.block_touch == (0.2, 4.5)
+    assert ev.block_touch == (-0.2, 4.5)
     assert ev.trajectory == (4.0, 4.5, 9.7, 4.5)
 
 
 def test_deflection_back_to_attacker_half_is_covered(win):
     _prime_near_net(win)
     # deflection lands in-bounds on AWAY's own (right) half -> covered
-    win.on_trajectory(0.25, 4.4, 3.0, 4.0)
+    win.on_trajectory(-0.15, 4.4, 3.0, 4.0)
     ev = win.engine.events[-1]
     assert ev.rating == Rating.POOR
-    assert ev.block_touch == (0.2, 4.5)
+    assert ev.block_touch == (-0.2, 4.5)
     # engine keeps the rally alive; AWAY must cover its own ball
     assert win.engine.state.phase == Phase.DEFENSE
     assert win.candidate is not None and win.candidate[0] == AWAY
@@ -84,17 +87,18 @@ def test_deflection_back_to_attacker_half_is_covered(win):
 def test_deflection_onto_blockers_half_stays_in_play(win):
     _prime_near_net(win)
     # deflection lands on HOME's (left) half -> in play, HOME defends
-    win.on_trajectory(0.25, 4.4, -3.0, 4.0)
+    win.on_trajectory(-0.15, 4.4, -3.0, 4.0)
     ev = win.engine.events[-1]
     assert ev.rating == Rating.GOOD
-    assert ev.block_touch == (0.2, 4.5)
+    assert ev.block_touch == (-0.2, 4.5)
     assert win.engine.state.phase == Phase.DEFENSE
     assert win.candidate is not None and win.candidate[0] == HOME
 
 
 def test_unrated_second_drag_finalizes_previous_as_good(win):
-    # primed AWAY attack ends far from the net, so no deflection is possible
-    win.on_trajectory(6.0, 4.5, 5.0, 4.5)
+    # primed AWAY attack lands deep in HOME's half, far from the net, so no
+    # deflection is possible
+    win.on_trajectory(6.0, 4.5, -5.0, 4.5)
     assert win.pending_attack is not None
     n = len(win.engine.events)
     # a second drag, not a block deflection (press nowhere near the arrow
@@ -109,7 +113,7 @@ def test_unrated_second_drag_finalizes_previous_as_good(win):
     assert isinstance(ev, AttackEvent)
     assert ev.team == AWAY
     assert ev.rating == Rating.GOOD
-    assert ev.trajectory == (6.0, 4.5, 5.0, 4.5)
+    assert ev.trajectory == (6.0, 4.5, -5.0, 4.5)
     # a GOOD attack sends the ball to HOME to defend; the new drag primes
     # HOME's counter-attack, still unrated
     assert win.engine.state.phase == Phase.DEFENSE

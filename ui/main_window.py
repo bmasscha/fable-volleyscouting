@@ -28,8 +28,9 @@ from PyQt6.QtWidgets import (QButtonGroup, QComboBox, QDialog,
                              QToolButton, QVBoxLayout, QWidget)
 
 from core import persistence, rotation
-from core.blocks import (BLOCK_GRAB_RADIUS, BLOCK_NET_ZONE, BLOCK_OUT, COVERED,
-                         IN_PLAY, classify_block_deflection)
+from core.blocks import (BLOCK_GRAB_RADIUS, BLOCK_OUT, COVERED, IN_PLAY,
+                         classify_block_deflection, is_block_touch,
+                         unblocked_attack_is_error)
 from core.engine import MatchEngine, Phase
 from core.formations import Mode
 from core.systems import (DEFAULT_SYSTEM, SYSTEMS, acting_setter_slot_for,
@@ -153,7 +154,7 @@ class MainWindow(QMainWindow):
         self.court.player_tapped.connect(self.on_player_tapped)
         self.court.court_tapped.connect(self.on_court_tapped)
         self.rating_bar.rating_clicked.connect(self.on_rating)
-        self.rating_bar.serve_rating_clicked.connect(self.on_serve_chip)
+        self.rating_bar.chip_rating_clicked.connect(self.on_rate_chip)
         self.rating_bar.overpass_clicked.connect(self.on_overpass)
         self.rating_bar.undo_clicked.connect(self.on_undo)
         self.rating_bar.point_left_clicked.connect(lambda: self.on_point_side(LEFT))
@@ -335,15 +336,15 @@ class MainWindow(QMainWindow):
 
     def _try_block_deflection(self, x1: float, y1: float,
                               x2: float, y2: float) -> bool:
-        """A second drag off a primed attack that ends near the net and
-        starts on the arrow tip is the block deflection stroke: draw the
+        """A second drag off a primed attack that ends just across the net
+        and starts on the arrow tip is the block deflection stroke: draw the
         bent path and auto-finalize the attack (no rating tap). Returns True
         when it consumed the drag."""
         if self.pending_attack is None:
             return False
         team, attacker, ptraj = self.pending_attack
         px, py = ptraj[2], ptraj[3]
-        if abs(px) > BLOCK_NET_ZONE:
+        if not is_block_touch(self.engine.side_of(team), px, py):
             return False
         if (x1 - px) ** 2 + (y1 - py) ** 2 > BLOCK_GRAB_RADIUS ** 2:
             return False
@@ -366,9 +367,18 @@ class MainWindow(QMainWindow):
             attacker = self.candidate[1]
         else:
             attacker = self._nearest(team, traj[0], traj[1])
-        self.pending_attack = (team, attacker, traj)
         self.candidate = (team, attacker)
         self.court.add_trajectory(*traj, kind="attack")
+        if unblocked_attack_is_error(self.engine.side_of(team),
+                                     traj[2], traj[3]):
+            # the ball never reached the opponents' court -- out, or into the
+            # net -- so the rally is already decided: auto-finalize with '!'
+            # and no rating tap, exactly like an out serve. A defensive touch
+            # that put it out is fixed with the '#' override chip.
+            self.pending_attack = None
+            self._append(AttackEvent(team, attacker, Rating.ERROR, traj))
+            return
+        self.pending_attack = (team, attacker, traj)
         self.refresh()
 
     def on_rating(self, rating: Rating) -> None:
@@ -439,18 +449,49 @@ class MainWindow(QMainWindow):
         self.candidate = None      # opposing attacker comes from the drag
         self.refresh()
 
-    def on_serve_chip(self, rating: Rating) -> None:
-        """Re-rate the serve that was just entered with the default '+'."""
+    def _last_scouted_index(self) -> int:
+        """Index of the last event the scouter actually entered, looking past
+        the auto libero swaps the app appended behind it -- an attack error
+        ends the rally, so the drain can run right after the very touch the
+        chips are about to re-rate. -1 when there is nothing to re-rate."""
+        i = len(self.engine.events) - 1
+        while i >= 0:
+            e = self.engine.events[i]
+            if isinstance(e, LiberoSwapEvent) and e.auto:
+                i -= 1
+                continue
+            break
+        return i
+
+    def _last_scouted_event(self):
+        i = self._last_scouted_index()
+        return self.engine.events[i] if i >= 0 else None
+
+    def on_rate_chip(self, rating: Rating) -> None:
+        """Re-rate the touch the app just auto-rated: the serve entered with
+        the default '+', or an attack auto-scored '!' because it landed out.
+        The chips are only offered right after such an event."""
         if not self.engine or not self.engine.events:
             return
-        last = self.engine.events[-1]
-        if not isinstance(last, ServeEvent):
-            self._hint("serve rating can only be changed right after the serve")
+        idx = self._last_scouted_index()
+        last = self.engine.events[idx] if idx >= 0 else None
+        if isinstance(last, ServeEvent):
+            revised = ServeEvent(last.team, last.player_id, rating,
+                                 last.trajectory)
+        elif isinstance(last, AttackEvent) and last.block_touch is None:
+            revised = AttackEvent(last.team, last.player_id, rating,
+                                  last.trajectory)
+        else:
+            self._hint("the rating can only be changed right after the touch")
             self.refresh()
             return
-        self.engine.undo()
-        self._append(ServeEvent(last.team, last.player_id, rating,
-                                last.trajectory))
+        # drop the app's own follow-up swaps together with the touch they came
+        # from; _append re-drains them against the corrected outcome
+        for _ in range(len(self.engine.events) - idx):
+            self.engine.undo()
+            if self.event_log is not None:
+                self.event_log.log_undo()
+        self._append(revised)
 
     def on_player_tapped(self, team_key: str, player_id: str) -> None:
         if not self.engine:
@@ -793,7 +834,7 @@ class MainWindow(QMainWindow):
         self._sync_system_buttons()
         if not self.engine or self.engine.state.set_number == 0:
             self.rating_bar.set_prompt("Toolbar → New match to start scouting")
-            self.rating_bar.show_serve_chips(False)
+            self.rating_bar.show_rate_chips(False)
             self.scoreboard.show_alert("")
             return
         st = self.engine.state
@@ -910,6 +951,7 @@ class MainWindow(QMainWindow):
     def _refresh_prompt(self, st) -> None:
         chips = False
         chip_rating = None
+        chip_label = "serve"
         context = "serve"
         if st.phase == Phase.RECEPTION:
             context = "reception"
@@ -922,9 +964,18 @@ class MainWindow(QMainWindow):
                 self.engine.expected_server() or "")
             who = f"#{sp.number} {sp.name}" if sp else "server"
             prompt = f"SERVE {self.teams[st.serving_team].name} {who}: drag the ball trajectory"
+            # an attack drawn out of the opponents' court was auto-scored '!'
+            # and ended the rally -- offer the chips in case a defensive touch
+            # put it out, which makes it the attacker's point instead. Reaching
+            # AWAIT_SERVE at all means that attack was '!' or '#', and the
+            # chips stay up for both so the override can be taken back.
+            last = self._last_scouted_event()
+            if (isinstance(last, AttackEvent) and last.trajectory is not None
+                    and last.block_touch is None):
+                chips, chip_rating, chip_label = True, last.rating, "attack"
         elif st.phase == Phase.RECEPTION:
             prompt = "RECEPTION: rate " + self._cand_txt() + " with ! - + #"
-            last = self.engine.events[-1] if self.engine.events else None
+            last = self._last_scouted_event()
             if isinstance(last, ServeEvent):
                 chips, chip_rating = True, last.rating
         elif st.phase == Phase.ATTACK:
@@ -950,15 +1001,15 @@ class MainWindow(QMainWindow):
             prompt = ""
         self.rating_bar.set_prompt(prompt)
         self.rating_bar.set_context(context)
-        self.rating_bar.show_serve_chips(chips, chip_rating)
+        self.rating_bar.show_rate_chips(chips, chip_rating, chip_label)
 
     def _block_hint(self) -> str:
-        """When the primed attack ends by the net, remind the scouter the
-        second stroke logs a block deflection."""
+        """When the primed attack ends just across the net, remind the
+        scouter the second stroke logs a block deflection."""
         if not self.pending_attack:
             return ""
-        px = self.pending_attack[2][2]
-        if abs(px) <= BLOCK_NET_ZONE:
+        team, _, ptraj = self.pending_attack
+        if is_block_touch(self.engine.side_of(team), ptraj[2], ptraj[3]):
             return " — blocked? drag from the block contact to where it went"
         return ""
 

@@ -61,16 +61,16 @@ def test_same_half_second_drag_charges_same_team_twice(app):
     with no engine warnings surfaced."""
     w = _new_win(app)
     # first drag: AWAY (right side) receives and attacks in one gesture,
-    # ending far from the net so the second drag below can't be mistaken
-    # for a block-deflection stroke
-    w.on_trajectory(3.0, 2.0, 5.0, 3.0)
+    # landing deep in HOME's half -- far from the net, so the second drag
+    # below can't be mistaken for a block-deflection stroke
+    w.on_trajectory(3.0, 2.0, -5.0, 3.0)
     assert w.engine.state.phase == Phase.ATTACK
     assert w.pending_attack is not None and w.pending_attack[0] == AWAY
 
     n = len(w.engine.events)
     # second drag starts on the SAME (right) half as the first attack --
     # the scouter missed the opponent's play entirely in a fast rally
-    w.on_trajectory(4.0, 1.0, 6.0, 2.0)
+    w.on_trajectory(4.0, 1.0, -6.0, 2.0)
     # the first (still-unrated) attack just got finalized as the default GOOD;
     # the second drag primes the next attack
     assert len(w.engine.events) == n + 1
@@ -97,8 +97,8 @@ def test_other_half_drag_still_charges_the_other_team(app):
     w.refresh()
 
     n = len(w.engine.events)
-    # drag starts on HOME's (left) half
-    w.on_trajectory(-3.0, 2.0, -1.0, 3.0)
+    # drag starts on HOME's (left) half and crosses into AWAY's
+    w.on_trajectory(-3.0, 2.0, 4.0, 3.0)
     assert w.pending_attack is not None and w.pending_attack[0] == HOME
     w.on_rating(Rating.GOOD)
 
@@ -117,7 +117,7 @@ def test_attack_phase_drag_from_non_holding_half_takes_possession(app):
     w = _win_in_attack(app)   # AWAY (right) holds the ball, phase ATTACK
     n = len(w.engine.events)
 
-    w.on_trajectory(-3.0, 2.0, -1.0, 3.0)
+    w.on_trajectory(-3.0, 2.0, 4.0, 3.0)
     assert w.pending_attack is not None and w.pending_attack[0] == HOME
     w.on_rating(Rating.GOOD)
 

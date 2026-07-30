@@ -18,7 +18,8 @@ switching per official rules, and per-player statistics reports.
 |---|---|
 | **Serve** | Drag from behind the end line to the landing spot. Auto-rated `+`; a drag ending out of court is auto-rated `!` (fault). The small chips above the buttons re-rate the serve (`#` = ace). |
 | **Reception** | The receiver nearest the landing spot is preselected (tap another player to override). Tap one of the big `! - + #` buttons. `!` = aced. |
-| **Attack** | Drag the attack trajectory — the attacker is picked from the drag start — then rate it. `#` = kill (point), `!` = error. You may also skip the reception rating and drag the attack directly (reception logs as `+`). |
+| **Attack** | Drag the attack trajectory — the attacker is picked from the drag start — then rate it. `#` = kill (point), `!` = error. A drag that does not land in the opponents' court (out past a line, or short on your own half = into the net) is auto-rated `!` on the drag itself, no tap: the rally is over and the point goes to the other team. The chips above the buttons re-rate it — tap `#` when a defender was the one who put the ball out. You may also skip the reception rating and drag the attack directly (reception logs as `+`). |
+| **Blocked attack** | Draw the attack *across* the net, ending within 1.5 m of it where the block touched the ball, then a second drag from that point to where the ball ended up. Auto-rated with no tap: out = `#` (kill), back into your own court = `-`, staying on the blockers' side = `+`. Stroke one has to cross the net — an arrow stopping on your own side means the ball never got over, which is the `!` above. |
 | **Defense** | The digger nearest the attack landing is preselected; rate the dig, or directly drag the counter-attack. |
 | **Point / chaos** | `◀ point` / `point ▶` award the rally manually (net faults, referee calls). |
 | **Undo** | `⟲` undoes any number of steps (also `Ctrl+Z`). Keys `1-4` = `! - + #`. |
