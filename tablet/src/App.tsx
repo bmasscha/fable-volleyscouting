@@ -1601,6 +1601,10 @@ export function App() {
   const [candidate, setCandidate] = useState<CandidateSelection | null>(null);
   const [pendingAttack, setPendingAttack] = useState<PendingAttackState | null>(null);
   const [armedBench, setArmedBench] = useState<CandidateSelection | null>(null);
+  // true while the last logged event is an attack the APP rated itself (drawn
+  // out of the opponents' court): only then are the override chips offered.
+  // A rating the scouter tapped needs no override.
+  const [autoRatedAttack, setAutoRatedAttack] = useState(false);
   const [interactionHint, setInteractionHint] = useState<string | null>(null);
   const [editingNextSet, setEditingNextSet] = useState(false);
   const [nextSetDraft, setNextSetDraft] = useState<SetStartEvent | null>(null);
@@ -1891,6 +1895,7 @@ export function App() {
     clearCourtTransientState();
     setArmedBench(null);
     setEditingNextSet(false);
+    setAutoRatedAttack(false);
     setNextSetDraft(null);
     setReportOpen(false);
     setTrajectoryOpen(false);
@@ -1952,10 +1957,12 @@ export function App() {
    * app's own follow-up swaps) already dropped, so the auto-libero drain and
    * the warnings below are re-derived against the new outcome. */
   function appendEvent(event: MatchEvent | MatchEvent[],
-                       baseEvents?: MatchEvent[]): MatchEngine | null {
+                       baseEvents?: MatchEvent[],
+                       autoRated = false): MatchEngine | null {
     if (session == null) {
       return null;
     }
+    setAutoRatedAttack(autoRated);
     const inputs = Array.isArray(event) ? event : [event];
     if (inputs.length === 0) {
       return null;
@@ -2019,6 +2026,7 @@ export function App() {
     clearCourtTransientState();
     setArmedBench(null);
     setEditingNextSet(false);
+    setAutoRatedAttack(false);
     // auto libero swaps were entered by the app, not the scouter: one
     // undo removes them together with the event that caused them
     let events = session.events;
@@ -2105,7 +2113,7 @@ export function App() {
           rating: Rating.ERROR,
           trajectory,
         },
-      ]);
+      ], undefined, true);
       setCandidate(null);
       return;
     }
@@ -2161,8 +2169,11 @@ export function App() {
     }
     const revised = { ...last, rating };
     // drop the app's own follow-up swaps together with the touch they came
-    // from; appendEvent re-drains them against the corrected outcome
-    const preview = appendEvent([revised], session.events.slice(0, idx));
+    // from; appendEvent re-drains them against the corrected outcome. An
+    // overridden attack keeps its chips, so the override can be taken back
+    // without an undo
+    const preview = appendEvent([revised], session.events.slice(0, idx),
+                                revised.type === "attack");
     setPendingAttack(null);
     setInteractionHint(null);
     if (preview != null && revised.type === "serve"
@@ -2918,11 +2929,13 @@ export function App() {
   const currentServeRating = lastEvent?.type === "serve" ? lastEvent.rating : null;
   // an attack drawn out of the opponents' court was auto-scored '!' and ended
   // the rally -- offer the same chips in case a defensive touch put it out,
-  // which makes it the attacker's point instead. Reaching AWAIT_SERVE at all
-  // means that attack was '!' or '#', and the chips stay up for both so the
-  // override can be taken back.
+  // which makes it the attacker's point instead. Only for a rating the app
+  // gave itself: an attack the scouter rated with the big buttons already
+  // says what they meant, and chips popping up after that tap read as a
+  // second thing to answer.
   const lastScouted = session.events[lastScoutedIndex(session.events)] ?? null;
-  const canRerateAttack = engine.state.phase === Phase.AWAIT_SERVE
+  const canRerateAttack = autoRatedAttack
+    && engine.state.phase === Phase.AWAIT_SERVE
     && lastScouted?.type === "attack"
     && lastScouted.block_touch == null
     && lastScouted.trajectory != null;

@@ -67,6 +67,10 @@ class MainWindow(QMainWindow):
         self.candidate: tuple[str, str] | None = None       # (team, player_id)
         self.pending_attack: tuple[str, str, tuple] | None = None
         self.armed_bench: tuple[str, str] | None = None
+        # True while the last logged event is an attack the APP rated itself
+        # (drawn out of the opponents' court): only then are the override
+        # chips offered. A rating the scouter tapped needs no override.
+        self._auto_rated_attack = False
         self._transient_warning = ""
         self.formations_enabled = True   # realistic 5-1 positions vs grid
         self.charts_dialog = None        # non-modal trajectory charts
@@ -237,6 +241,7 @@ class MainWindow(QMainWindow):
         self.engine.load_events(events)
         self.match_path = path
         self._open_event_log()
+        self._auto_rated_attack = False
         self._clear_pending()
         self._rebuild_arrows()
         self._refresh_charts()
@@ -376,7 +381,8 @@ class MainWindow(QMainWindow):
             # and no rating tap, exactly like an out serve. A defensive touch
             # that put it out is fixed with the '#' override chip.
             self.pending_attack = None
-            self._append(AttackEvent(team, attacker, Rating.ERROR, traj))
+            self._append(AttackEvent(team, attacker, Rating.ERROR, traj),
+                         auto_rated=True)
             return
         self.pending_attack = (team, attacker, traj)
         self.refresh()
@@ -491,7 +497,9 @@ class MainWindow(QMainWindow):
             self.engine.undo()
             if self.event_log is not None:
                 self.event_log.log_undo()
-        self._append(revised)
+        # an overridden attack keeps its chips, so the override can be taken
+        # back without an undo
+        self._append(revised, auto_rated=isinstance(revised, AttackEvent))
 
     def on_player_tapped(self, team_key: str, player_id: str) -> None:
         if not self.engine:
@@ -571,6 +579,7 @@ class MainWindow(QMainWindow):
                 break
             if self.event_log is not None:
                 self.event_log.log_undo()
+        self._auto_rated_attack = False
         self._clear_pending()
         self._rebuild_arrows()
         if removed is not None:
@@ -594,10 +603,12 @@ class MainWindow(QMainWindow):
             except OSError:
                 self._hint("⚠ could not open the live event log")
 
-    def _append(self, event) -> None:
+    def _append(self, event, auto_rated: bool = False) -> None:
         if getattr(event, "ts", None) is None:
             event = dataclasses.replace(event, ts=time.time())
         warnings = self.engine.append(event)
+        # set before any refresh() below -- _refresh_prompt reads it
+        self._auto_rated_attack = auto_rated
         if self.event_log is not None:
             self.event_log.log_event(event)
         auto_msgs = self._drain_auto_libero()
@@ -966,11 +977,14 @@ class MainWindow(QMainWindow):
             prompt = f"SERVE {self.teams[st.serving_team].name} {who}: drag the ball trajectory"
             # an attack drawn out of the opponents' court was auto-scored '!'
             # and ended the rally -- offer the chips in case a defensive touch
-            # put it out, which makes it the attacker's point instead. Reaching
-            # AWAIT_SERVE at all means that attack was '!' or '#', and the
-            # chips stay up for both so the override can be taken back.
+            # put it out, which makes it the attacker's point instead. Only
+            # for a rating the app gave itself: an attack the scouter rated
+            # with the big buttons already says what they meant, and chips
+            # popping up after that tap read as a second thing to answer.
             last = self._last_scouted_event()
-            if (isinstance(last, AttackEvent) and last.trajectory is not None
+            if (self._auto_rated_attack
+                    and isinstance(last, AttackEvent)
+                    and last.trajectory is not None
                     and last.block_touch is None):
                 chips, chip_rating, chip_label = True, last.rating, "attack"
         elif st.phase == Phase.RECEPTION:

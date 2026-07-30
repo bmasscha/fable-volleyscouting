@@ -157,6 +157,26 @@ def test_chips_go_back_to_the_serve_once_the_next_serve_is_drawn(win):
     assert "serve" in win.rating_bar._chip_label.text()
 
 
+def test_no_chips_for_an_attack_the_scouter_rated_by_hand(win):
+    """The chips are the override for a rating the APP gave. A kill tapped on
+    the big buttons already says what the scouter meant -- offering chips
+    afterwards reads as a second question, with the next serve already due."""
+    win.on_trajectory(4.0, 4.5, -5.0, 4.5)     # lands in -> waits for a tap
+    win.on_rating(Rating.PERFECT)              # big '#' button: kill
+
+    assert win.engine.state.phase == Phase.AWAIT_SERVE
+    assert win.engine.events[-1].rating == Rating.PERFECT
+    assert win.rating_bar._chip_widgets[Rating.ERROR].isHidden()
+    assert not win.rating_bar._chip_label.isVisible()
+
+
+def test_no_chips_for_a_hand_rated_attack_that_ended_out(win):
+    """Same when the manual rating is '!': the scouter chose it."""
+    win.on_trajectory(4.0, 4.5, -5.0, 4.5)
+    win.on_rating(Rating.ERROR)
+    assert win.rating_bar._chip_widgets[Rating.ERROR].isHidden()
+
+
 def test_chips_are_hidden_while_an_attack_awaits_its_rating(win):
     win.on_trajectory(4.0, 4.5, -5.0, 4.5)     # lands in -- primes, no chips
     assert win.pending_attack is not None
